@@ -332,6 +332,10 @@ def _managed(ticket_id: str, file: Path | None = None) -> None:
         if state != "READY_FOR_HUMAN_REVIEW":
             raise typer.Exit(2)
         console.print("Ready for human review. Inspect the final diff in the worktree.")
+        if config.knowledge.enabled:
+            console.print(
+                f"Also review docs/knowledge/{ticket_id}.md in that worktree.", markup=False
+            )
     except (ValueError, OSError, ConfigurationError, sqlite3.Error) as exc:
         console.print(f"Workflow stopped: {exc}", markup=False)
         console.print(f"Inspect: dev-agent status {ticket_id}", markup=False)
@@ -382,6 +386,10 @@ def revise(
         if state != "READY_FOR_HUMAN_REVIEW":
             raise typer.Exit(2)
         console.print("Revision ready for human review. Inspect the final diff in the worktree.")
+        if config.knowledge.enabled:
+            console.print(
+                f"Also review docs/knowledge/{ticket_id}.md in that worktree.", markup=False
+            )
     except (ValueError, OSError, ConfigurationError, sqlite3.Error) as exc:
         console.print(f"Revision stopped: {exc}", markup=False)
         console.print(f"Inspect: dev-agent status {ticket_id}", markup=False)
@@ -410,6 +418,12 @@ def merge(
             f"{preview.branch} → {preview.destination}\nWorktree: {preview.target}", markup=False
         )
         console.print(preview.summary or "No file changes", markup=False)
+        if (preview.target / "docs" / "knowledge" / f"{ticket_id}.md").is_file():
+            console.print(
+                f"Review knowledge candidates: docs/knowledge/{ticket_id}.md\n"
+                "Merge accepts this document together with the code. "
+                "Use revise to remove or correct candidates before accepting.", markup=False
+            )
         console.print(
             "This commits reviewed changes and fast-forwards the source branch. "
             "No push, migration, deployment, or worktree deletion."

@@ -24,3 +24,7 @@ limits:
 gates:
   plan_review: human
   approve_final: true
+
+# Draft reusable knowledge alongside code; reviewed and accepted at final merge.
+knowledge:
+  enabled: true

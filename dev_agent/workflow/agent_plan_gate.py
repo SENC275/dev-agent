@@ -49,6 +49,12 @@ async def review_plan_by_agent(directory: Path, registry: ProviderRegistry) -> b
                 for name in ("exploration.json", "patterns.json", "tests.json")
             },
             "schema": PlanReview.model_json_schema(),
+            "workflow_scope": (
+                "Knowledge candidates are enabled: a docs/knowledge/<ticket>.md document "
+                "is authorized alongside code, for independent final review and human merge "
+                "acceptance. Do not require an additional upfront human approval for it."
+                if registry.config.knowledge.enabled else "Knowledge generation is disabled."
+            ),
         }
         result = await registry.resolve("reviewer").execute(
             AgentTask(

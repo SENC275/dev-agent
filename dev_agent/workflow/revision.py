@@ -15,6 +15,7 @@ from dev_agent.workflow.feedback import feedback_history
 from dev_agent.workflow.fixing import fix
 from dev_agent.workflow.implementation import _instructions, _verify_identity
 from dev_agent.workflow.investigation import _write
+from dev_agent.workflow.knowledge import knowledge_context
 from dev_agent.workflow.locking import check_fix_lock, revision_owner
 from dev_agent.workflow.persistence import Journal, now
 from dev_agent.workflow.planning import _hash, _json, approval_is_current, checked_plan
@@ -107,6 +108,8 @@ async def revise(
                 "takes precedence over earlier requirements where they conflict. Preserve "
                 "unrelated changes. Follow repository instructions. Add regression tests. "
                 "Do not commit, stage, merge, deploy, or change workflow artifacts. "
+                "When knowledge.enabled is true, follow its policy and update its document to "
+                "reflect this feedback and final code before validation. "
                 "Return a concise summary, not a claim that validation passed.\nInput bundle:\n"
                 + json.dumps(
                     {
@@ -114,6 +117,7 @@ async def revise(
                         "human_feedback": history_before + [feedback],
                         "git_diff": snapshot.diff,
                         "repository_instructions": _instructions(target),
+                        "knowledge": knowledge_context(plan_dir, config),
                     }
                 )
             )

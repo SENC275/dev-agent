@@ -17,6 +17,7 @@ from dev_agent.validation.runner import ValidationRun
 from dev_agent.workflow.feedback import feedback_history
 from dev_agent.workflow.implementation import _verify_identity, change_warnings
 from dev_agent.workflow.investigation import _write
+from dev_agent.workflow.knowledge import knowledge_context, knowledge_findings
 from dev_agent.workflow.locking import check_fix_lock
 from dev_agent.workflow.planning import (
     _json,
@@ -84,6 +85,7 @@ async def review(
         "change_warnings": await change_warnings(target, base),
         "validation": validation.model_dump(mode="json"),
         "schema": Review.model_json_schema(),
+        "knowledge": knowledge_context(directory, registry.config),
     }
     provider = registry.resolve("reviewer")
     output = directory / "reviews" / uuid4().hex
@@ -139,6 +141,9 @@ async def review(
                 "Reviewer execution failed; inspect model, authentication and timeout."
             )
         findings = parse_artifact(result.output, Review)
+        findings.findings.extend(
+            await knowledge_findings(target, knowledge_context(directory, registry.config))
+        )
         await _verify_identity(repository, target, branch, base)
         if (
             not await approval_is_current(directory)

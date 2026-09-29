@@ -92,6 +92,17 @@ async def generate_plan(run: Path, registry: ProviderRegistry) -> Path:
     if not ticket.strip():
         raise ValueError("Ticket must not be empty.")
     bundle: dict[str, object] = {"ticket": ticket}
+    if registry.config.knowledge.enabled:
+        from dev_agent.workflow.knowledge import POLICY
+
+        ticket_id = _json(_local_file(run, "investigation.json"))["ticket_id"]
+        bundle["knowledge"] = {
+            "policy": POLICY,
+            "path": f"docs/knowledge/{ticket_id}.md",
+            "planning_instruction": (
+                "Include this knowledge document in Expected Files and review scope."
+            ),
+        }
     for name, model in (
         ("exploration.json", Exploration),
         ("patterns.json", PatternAnalysis),

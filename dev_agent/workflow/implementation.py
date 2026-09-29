@@ -11,6 +11,7 @@ from dev_agent.git.worktree import clean_baseline, git
 from dev_agent.models.agent import AgentTask
 from dev_agent.providers.registry import ProviderRegistry
 from dev_agent.workflow.investigation import _write
+from dev_agent.workflow.knowledge import knowledge_context
 from dev_agent.workflow.locking import check_fix_lock
 from dev_agent.workflow.planning import (
     _json,
@@ -118,6 +119,7 @@ async def implement(directory: Path, registry: ProviderRegistry) -> Implementati
         "ticket": _local_file(run, "ticket.md").read_text(encoding="utf-8"),
         "approved_plan": plan,
         "repository_instructions": _instructions(target),
+        "knowledge": knowledge_context(directory, registry.config, investigation=True),
     }
     prompt = files("dev_agent").joinpath("prompts/implement.md").read_text(encoding="utf-8")
     task = AgentTask(

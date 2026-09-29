@@ -79,6 +79,10 @@ class LimitsConfig(StrictModel):
     max_fix_cycles: int = Field(default=2, ge=0)
 
 
+class KnowledgeConfig(StrictModel):
+    enabled: bool = False
+
+
 class ProjectConfig(StrictModel):
     project: str | None = None
     providers: dict[str, ProviderConfig] = Field(
@@ -92,6 +96,7 @@ class ProjectConfig(StrictModel):
     git: GitConfig = Field(default_factory=GitConfig)
     gates: GatesConfig = Field(default_factory=GatesConfig)
     limits: LimitsConfig = Field(default_factory=LimitsConfig)
+    knowledge: KnowledgeConfig = Field(default_factory=KnowledgeConfig)
 
     @model_validator(mode="after")
     def validate_roles(self) -> "ProjectConfig":

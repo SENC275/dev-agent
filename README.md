@@ -104,6 +104,22 @@ dev-agent merge DEMO-001
 source branch. It requires current passing checks and an unchanged source baseline;
 it does not push, deploy, or apply database migrations.
 
+## Reusable knowledge
+
+New `init` configurations enable knowledge candidates. For an existing project, add
+this before starting a new ticket (omit it or use `false` to keep the old behavior):
+
+```yaml
+knowledge:
+  enabled: true
+```
+
+The implementer drafts `docs/knowledge/<ticket>.md` from investigation and final code.
+Candidates include scope, source references, the base commit, and recheck conditions.
+The independent reviewer checks them alongside code; `revise` can correct or reject
+them. Final merge accepts both together, without another early approval gate.
+See [knowledge workflow](docs/knowledge-workflow.md) for details.
+
 ## More
 
 - [CRUD demo](examples/crud-app/README.md)

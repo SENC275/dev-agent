@@ -21,3 +21,7 @@ do not replace a full file with only your additions. Reuse existing test fixture
 database configuration and migration conventions. Never invent connection strings
 or replace migration tests with create_all/drop_all. In your summary list only edits
 you actually made, and explicitly identify unfinished plan items.
+
+When the supplied knowledge.enabled is true, follow its knowledge policy and document
+contract as part of this task. Review knowledge alongside code; never promote a
+candidate to an unconditional project rule. When disabled, do not generate knowledge.

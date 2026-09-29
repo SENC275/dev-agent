@@ -19,6 +19,7 @@ from dev_agent.validation.runner import ValidationRun, infrastructure_failure, v
 from dev_agent.workflow.feedback import feedback_history
 from dev_agent.workflow.implementation import _instructions, _verify_identity, change_warnings
 from dev_agent.workflow.investigation import _write
+from dev_agent.workflow.knowledge import knowledge_context
 from dev_agent.workflow.locking import check_revision_lock
 from dev_agent.workflow.planning import (
     _json,
@@ -259,6 +260,7 @@ async def fix(
                 "change_warnings": await change_warnings(target, base),
                 "repository_instructions": _instructions(target),
                 "schema": FixReport.model_json_schema(),
+                "knowledge": knowledge_context(directory, config),
             }
             prompt = files("dev_agent").joinpath("prompts/fix.md").read_text(encoding="utf-8")
             result = await registry.resolve("fixer").execute(
