@@ -2847,7 +2847,7 @@ providers:
     type: codex_cli
   local:
     type: ollama
-    base_url: http://10.0.0.28:11434
+    base_url: http://127.0.0.1:11434
     model: qwen2.5-coder:7b-instruct
     timeout_seconds: 600
     num_ctx: 8192
@@ -3017,7 +3017,7 @@ or rerun the implementation.
 To exercise real local-model editing followed by a structured FixReport:
 
 ```bash
-DEV_AGENT_OLLAMA_URL=http://10.0.0.28:11434 \
+DEV_AGENT_OLLAMA_URL=http://127.0.0.1:11434 \
   .venv/bin/pytest tests/integration/test_ollama_live.py -q
 ```
 
