@@ -1,0 +1,17 @@
+.venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+dist/
+*.egg-info/
+.dev-agent/
+
+# Local settings and secrets
+.idea/
+.DS_Store
+.env
+.env.*
+!.env.example
+.dev-agent.yaml

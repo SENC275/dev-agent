@@ -1,0 +1,27 @@
+# Merge providers/roles into your project config; preserve its commands and Git settings.
+# All-local example. No Codex CLI or cloud account is required by these roles.
+providers:
+  local:
+    type: ollama
+    base_url: http://10.0.0.28:11434
+    model: qwen2.5-coder:7b-instruct
+    timeout_seconds: 600
+    num_ctx: 8192
+    max_output_tokens: 2048
+    max_steps: 24
+roles:
+  explorer: {provider: local}
+  pattern_researcher: {provider: local}
+  test_researcher: {provider: local}
+  planner: {provider: local}
+  implementer: {provider: local}
+  reviewer: {provider: local}
+  fixer: {provider: local}
+# Replace these with real commands for your target project.
+commands:
+  test: pytest
+  lint: ruff check .
+  typecheck: mypy src
+gates:
+  plan_review: human
+  approve_final: true

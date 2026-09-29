@@ -1,0 +1,1 @@
+"""Isolated, explicit Git operations."""

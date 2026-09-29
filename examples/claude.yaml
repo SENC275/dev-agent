@@ -1,0 +1,35 @@
+# Merge into the target project's config; keep its validation and Git settings.
+# Install a current Claude Code CLI, then run: claude auth login
+providers:
+  codex:
+    type: codex_cli
+    timeout_seconds: 900
+  claude:
+    type: claude_cli
+    # Optional model alias; omit to use the CLI's default.
+    model: sonnet
+    timeout_seconds: 900
+    max_steps: 40 # Claude CLI maximum agentic turns
+  local:
+    type: ollama
+    base_url: http://10.0.0.28:11434
+    model: qwen2.5-coder:7b-instruct
+    timeout_seconds: 600
+    num_ctx: 8192
+    max_output_tokens: 2048
+    max_steps: 24
+roles:
+  explorer: {provider: codex}
+  pattern_researcher: {provider: codex}
+  test_researcher: {provider: codex}
+  planner: {provider: claude}
+  implementer: {provider: local}
+  reviewer: {provider: claude}
+  fixer: {provider: claude}
+commands:
+  test: pytest
+  lint: ruff check .
+  typecheck: mypy src
+gates:
+  plan_review: agent
+  approve_final: true
