@@ -1,18 +1,19 @@
 """Durable stage orchestration with explicit human approval and conservative recovery."""
 
+import json
 from pathlib import Path
 
 from dev_agent.git.snapshot import capture_snapshot
-from dev_agent.git.worktree import clean_baseline, create_approved_worktree
+from dev_agent.git.worktree import clean_baseline, create_approved_worktree, git
 from dev_agent.models.config import ProjectConfig
 from dev_agent.providers.registry import ProviderRegistry
 from dev_agent.validation.runner import ValidationRun, validate
 from dev_agent.workflow.agent_plan_gate import review_plan_by_agent
-from dev_agent.workflow.fixing import failed_validation, fix
+from dev_agent.workflow.fixing import fix, fix_budget
 from dev_agent.workflow.implementation import _verify_identity, implement
-from dev_agent.workflow.investigation import investigate
-from dev_agent.workflow.persistence import Journal
-from dev_agent.workflow.planning import _json, approval_is_current, generate_plan
+from dev_agent.workflow.investigation import _write, investigate
+from dev_agent.workflow.persistence import Journal, now
+from dev_agent.workflow.planning import _json, _local_file, approval_is_current, generate_plan
 from dev_agent.workflow.review import review
 
 STAGES = ("investigate", "plan", "worktree", "implement", "validate", "review", "fix")
@@ -32,10 +33,6 @@ async def repair_validation(
     try:
         from_validation = True
         if revalidate:
-            record = _json(plan / "worktree.json")
-            await failed_validation(
-                plan, config, Path(str(record["path"])), str(record["base_commit"])
-            )
             validation = await validate(plan, config.commands, config.validation)
             if validation.success:
                 await review(plan, registry)
@@ -61,29 +58,92 @@ async def repair_validation(
 
 
 async def advance(
-    journal: Journal, ticket_id: str, config: ProjectConfig, registry: ProviderRegistry
+    journal: Journal,
+    ticket_id: str,
+    config: ProjectConfig,
+    registry: ProviderRegistry,
+    *,
+    additional_fix_cycles: int = 0,
 ) -> str:
     with journal.lock(ticket_id):
         run = journal.get(ticket_id)
         if ProjectConfig.model_validate_json(run["config"] or "{}") != config:
             raise ValueError("Configuration changed since start; restore it before resuming.")
+        if type(additional_fix_cycles) is not int or not 0 <= additional_fix_cycles <= 10:
+            raise ValueError("Additional fix cycles must be between 0 and 10.")
+        steps = journal.steps(ticket_id)
+        recoverable = (
+            run["state"] == "WAITING_FOR_HUMAN"
+            and run["current_step"] in {"validation_fix", "fix"}
+            and run["plan_path"]
+            and steps
+            and steps[-1]["name"] in {"validation_fix", "fix"}
+            and steps[-1]["status"] == "COMPLETE"
+        )
+        if additional_fix_cycles and not recoverable:
+            raise ValueError("Extra cycles require a completed, paused fix cycle.")
+        if recoverable:
+            assert run["plan_path"] is not None
+            resume_plan = Path(run["plan_path"])
+            receipt = _json(resume_plan / "fix-cycle.json")
+            approval = _json(resume_plan / "approval.json")
+            record = _json(resume_plan / "worktree.json")
+            if (
+                receipt.get("status") != "WAITING_FOR_HUMAN"
+                or receipt.get("plan_sha256") != approval.get("plan_sha256")
+                or receipt.get("base_commit") != record.get("base_commit")
+                or not await approval_is_current(resume_plan)
+                or not await clean_baseline(journal.repository)
+                or any(
+                    (resume_plan / name).exists()
+                    for name in (
+                        "implementation.lock",
+                        "revision.lock",
+                        "validation.lock",
+                        "review.lock",
+                        "fix-cycle.lock",
+                    )
+                )
+            ):
+                raise ValueError(
+                    "Cannot resume an incomplete or stale fix cycle; inspect artifacts."
+                )
+            target = Path(str(record["path"]))
+            await _verify_identity(
+                journal.repository, target, str(record["branch"]), str(record["base_commit"])
+            )
+            if await git(target, "diff", "--cached", "--name-only", "-z", "--"):
+                raise ValueError("Staged changes require human inspection.")
+            budget = fix_budget(resume_plan, config)
+            if additional_fix_cycles:
+                path = _local_file(resume_plan, "fix-budget.json")
+                grants = _json(path).get("grants", []) if path.exists() else []
+                if not isinstance(grants, list):
+                    raise ValueError("Invalid fix budget grants.")
+                grants.append({"cycles": additional_fix_cycles, "granted_at": now()})
+                _write(
+                    path,
+                    json.dumps(
+                        {
+                            "plan_sha256": approval["plan_sha256"],
+                            "base_commit": approval["base_commit"],
+                            "additional_cycles": budget
+                            - config.limits.max_fix_cycles
+                            + additional_fix_cycles,
+                            "grants": grants,
+                        },
+                        indent=2,
+                    )
+                    + "\n",
+                )
+            return await repair_validation(
+                journal, ticket_id, resume_plan, config, registry, revalidate=True
+            )
         if run["state"] in {"MERGED", "MERGING", "MERGE_FAILED"}:
             return run["state"]
         if run["state"] == "READY_FOR_HUMAN_REVIEW":
             return await check_ready(journal, ticket_id)
         if run["state"] == "WAITING_FOR_HUMAN":
-            steps = journal.steps(ticket_id)
-            if (
-                run["current_step"] == "validation_fix"
-                and run["plan_path"]
-                and steps
-                and steps[-1]["name"] == "validation_fix"
-                and steps[-1]["status"] == "COMPLETE"
-                and _json(Path(run["plan_path"]) / "validation.json").get("status") == "FAILED"
-            ):
-                return await repair_validation(
-                    journal, ticket_id, Path(run["plan_path"]), config, registry, revalidate=True
-                )
             return "WAITING_FOR_HUMAN"
         history = journal.steps(ticket_id)
         completed = {step["name"] for step in history if step["status"] == "COMPLETE"}
@@ -177,7 +237,14 @@ async def advance(
                     elif name == "fix":
                         state = await fix(plan, config, registry)
                         if state != "READY_FOR_HUMAN_REVIEW":
-                            raise ValueError(f"Fix cycle stopped: {state}; inspect fix-cycle.json.")
+                            journal.finish(step_id, "COMPLETE", plan / "fix-cycle.json")
+                            journal.update(
+                                ticket_id,
+                                state=state,
+                                current_step="fix",
+                                error=str(_json(plan / "fix-cycle.json").get("reason", "")),
+                            )
+                            return state
                         receipt = _json(plan / "fix-cycle.json")
                         if receipt.get("status") != state:
                             raise ValueError("Missing final completion receipt.")

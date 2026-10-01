@@ -291,12 +291,15 @@ def start(
 
 
 @app.command()
-def resume(ticket_id: str) -> None:
+def resume(
+    ticket_id: str,
+    additional_fix_cycles: Annotated[int, typer.Option(min=0, max=10)] = 0,
+) -> None:
     """Continue a saved workflow without replaying uncertain writes."""
-    _managed(ticket_id)
+    _managed(ticket_id, additional_fix_cycles=additional_fix_cycles)
 
 
-def _managed(ticket_id: str, file: Path | None = None) -> None:
+def _managed(ticket_id: str, file: Path | None = None, *, additional_fix_cycles: int = 0) -> None:
     try:
         repository = Path.cwd().resolve()
         config = load_config(repository / CONFIG_NAME)
@@ -311,7 +314,15 @@ def _managed(ticket_id: str, file: Path | None = None) -> None:
                 )
             journal.create(ticket_id, file.read_text(encoding="utf-8"), config.model_dump_json())
         with activity(console, "Workflow running…", lambda: _stage(journal, ticket_id)):
-            state = asyncio.run(advance(journal, ticket_id, config, ProviderRegistry(config)))
+            state = asyncio.run(
+                advance(
+                    journal,
+                    ticket_id,
+                    config,
+                    ProviderRegistry(config),
+                    additional_fix_cycles=additional_fix_cycles,
+                )
+            )
         if state == "AWAITING_PLAN_APPROVAL":
             plan_path = journal.get(ticket_id)["plan_path"]
             assert plan_path is not None
@@ -422,7 +433,8 @@ def merge(
             console.print(
                 f"Review knowledge candidates: docs/knowledge/{ticket_id}.md\n"
                 "Merge accepts this document together with the code. "
-                "Use revise to remove or correct candidates before accepting.", markup=False
+                "Use revise to remove or correct candidates before accepting.",
+                markup=False,
             )
         console.print(
             "This commits reviewed changes and fast-forwards the source branch. "

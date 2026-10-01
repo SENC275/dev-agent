@@ -203,3 +203,110 @@ def test_environment_failure_does_not_spend_budget_and_resume_revalidates(reposi
     assert asyncio.run(advance(journal, "ENV", config, registry)) == "READY_FOR_HUMAN_REVIEW"
     assert len([t for t in provider.tasks if t.role == "implementer"]) == 1
     assert not any(t.role == "fixer" for t in provider.tasks)
+
+
+def test_resume_completed_pause_accepts_manual_fix(repository):
+    journal, config, provider, registry, plan = prepare(repository, limit=0)
+    assert asyncio.run(advance(journal, "REPAIR", config, registry)) == "WAITING_FOR_HUMAN"
+    target = Path(journal.get("REPAIR")["worktree_path"])
+    (target / "app.txt").write_text("fixed\n")
+    assert asyncio.run(advance(Journal(repository), "REPAIR", config, registry)) == (
+        "READY_FOR_HUMAN_REVIEW"
+    )
+    assert [t.role for t in provider.tasks].count("implementer") == 1
+    assert not any(t.role == "fixer" for t in provider.tasks)
+    assert journal.get("REPAIR")["current_step"] == "complete"
+
+
+def test_resume_budget_is_explicit_and_persistent(repository):
+    journal, config, provider, registry, plan = prepare(repository, limit=0)
+    assert asyncio.run(advance(journal, "REPAIR", config, registry)) == "WAITING_FOR_HUMAN"
+    assert asyncio.run(advance(journal, "REPAIR", config, registry)) == "WAITING_FOR_HUMAN"
+    assert not any(t.role == "fixer" for t in provider.tasks)
+    frozen = journal.get("REPAIR")["config"]
+    assert (
+        asyncio.run(
+            advance(Journal(repository), "REPAIR", config, registry, additional_fix_cycles=1)
+        )
+        == "READY_FOR_HUMAN_REVIEW"
+    )
+    budget = json.loads((plan / "fix-budget.json").read_text())
+    assert budget["additional_cycles"] == 1
+    assert len(budget["grants"]) == 1
+    assert journal.get("REPAIR")["config"] == frozen
+    assert json.loads((plan / "fix-cycle.json").read_text())["cycles_used"] == 1
+    assert asyncio.run(advance(journal, "REPAIR", config, registry)) == "READY_FOR_HUMAN_REVIEW"
+    assert [t.role for t in provider.tasks].count("fixer") == 1
+    assert [t.role for t in provider.tasks].count("implementer") == 1
+
+
+@pytest.mark.parametrize("blocker", ["lock", "receipt", "uncertain"])
+def test_resume_refuses_incomplete_cycle_without_granting_budget(repository, blocker):
+    journal, config, provider, registry, plan = prepare(repository, limit=0)
+    assert asyncio.run(advance(journal, "REPAIR", config, registry)) == "WAITING_FOR_HUMAN"
+    if blocker == "lock":
+        (plan / "fix-cycle.lock").write_text("busy")
+    elif blocker == "receipt":
+        receipt = json.loads((plan / "fix-cycle.json").read_text())
+        receipt["status"] = "RUNNING"
+        (plan / "fix-cycle.json").write_text(json.dumps(receipt))
+    else:
+        journal.begin("REPAIR", "implement")
+    count = len(provider.tasks)
+    with pytest.raises(ValueError):
+        asyncio.run(advance(journal, "REPAIR", config, registry, additional_fix_cycles=1))
+    assert len(provider.tasks) == count
+    assert not (plan / "fix-budget.json").exists()
+
+
+def test_resume_review_pause_and_cli_budget(repository):
+    from test_fixing import FINDING, CycleProvider
+
+    class ReviewPauseProvider(PipelineProvider):
+        def __init__(self):
+            super().__init__()
+            self.cycle = CycleProvider()
+
+        async def execute(self, task):
+            if task.role == "reviewer" and not self.cycle.fixes:
+                self.tasks.append(task)
+                return AgentResult(
+                    success=True,
+                    exit_code=0,
+                    duration_seconds=0,
+                    output=json.dumps({"findings": [FINDING]}),
+                )
+            if task.role in {"reviewer", "fixer"}:
+                self.tasks.append(task)
+                return await self.cycle.execute(task)
+            return await super().execute(task)
+
+    config = ProjectConfig(commands=commands())
+    config.limits.max_fix_cycles = 0
+    provider = ReviewPauseProvider()
+    registry = ProviderRegistry(config, {"codex_cli": lambda _: provider})
+    journal = Journal(repository)
+    journal.create("REVIEW", "Change app", config.model_dump_json())
+    asyncio.run(advance(journal, "REVIEW", config, registry))
+    plan = Path(journal.get("REVIEW")["plan_path"])
+    asyncio.run(approve_plan(plan, (plan / "plan.md").read_text()))
+    assert asyncio.run(advance(journal, "REVIEW", config, registry)) == "WAITING_FOR_HUMAN"
+    assert journal.steps("REVIEW")[-1]["status"] == "COMPLETE"
+    with (
+        chdir(repository),
+        patch("dev_agent.cli.load_config", return_value=config),
+        patch("dev_agent.cli.ProviderRegistry", return_value=registry),
+    ):
+        result = CliRunner().invoke(
+            app,
+            [
+                "resume",
+                "REVIEW",
+                "--additional-fix-cycles",
+                "1",
+            ],
+        )
+    assert result.exit_code == 0, result.output
+    assert journal.get("REVIEW")["state"] == "READY_FOR_HUMAN_REVIEW"
+    assert [t.role for t in provider.tasks].count("implementer") == 1
+    assert provider.cycle.fixes == 1

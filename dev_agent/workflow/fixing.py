@@ -97,6 +97,24 @@ async def failed_validation(
     return report
 
 
+def fix_budget(directory: Path, config: ProjectConfig) -> int:
+    """Explicit grants persist independently of the frozen project configuration."""
+    path = _local_file(directory, "fix-budget.json")
+    if not path.exists():
+        return config.limits.max_fix_cycles
+    receipt = _json(path)
+    approval = _json(_local_file(directory, "approval.json"))
+    extra = receipt.get("additional_cycles")
+    if (
+        type(extra) is not int
+        or extra < 0
+        or receipt.get("plan_sha256") != approval.get("plan_sha256")
+        or receipt.get("base_commit") != approval.get("base_commit")
+    ):
+        raise ValueError("Invalid fix budget receipt; inspect manually.")
+    return config.limits.max_fix_cycles + extra
+
+
 async def fix(
     directory: Path,
     config: ProjectConfig,
@@ -145,6 +163,7 @@ async def fix(
     if not fixes.resolve().is_relative_to(directory):
         raise ValueError("Fix artifacts must stay inside the plan directory.")
     approved_hash = _json(_local_file(directory, "approval.json"))["plan_sha256"]
+    budget = fix_budget(directory, config)
     token = uuid4().hex
     lock = directory / "fix-cycle.lock"
     latest = _local_file(directory, "fix-cycle.json")
@@ -155,7 +174,7 @@ async def fix(
         "plan_sha256": approved_hash,
         "base_commit": base,
         "worktree": str(target),
-        "max_fix_cycles": config.limits.max_fix_cycles,
+        "max_fix_cycles": budget,
         "started_at": datetime.now(UTC).isoformat(),
     }
     current: Path | None = None
@@ -222,7 +241,7 @@ async def fix(
                     "WAITING_FOR_HUMAN",
                     "Validation environment unavailable; restore it and resume to revalidate.",
                 )
-            if used >= config.limits.max_fix_cycles:
+            if used >= budget:
                 return save(
                     "WAITING_FOR_HUMAN",
                     "Fix cycle limit reached with unresolved findings or validation failures.",

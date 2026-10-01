@@ -134,3 +134,19 @@ uv run pytest
 uv run ruff check .
 uv run mypy dev_agent
 ```
+
+### Continue a paused ticket
+
+From the source repository, run `dev-agent resume DEMO-001`. A completed, paused
+fix cycle is revalidated and reviewed against the current worktree, including manual
+repairs. Existing implementation and fix history are preserved.
+
+If the fix budget is exhausted, explicitly grant more attempts:
+
+```sh
+dev-agent resume DEMO-001 --additional-fix-cycles 2
+```
+
+The extra budget is recorded with the ticket; the frozen YAML configuration stays
+unchanged. Plain `resume` never replenishes it. Interrupted or uncertain writes still
+require inspection and are not replayed automatically.
