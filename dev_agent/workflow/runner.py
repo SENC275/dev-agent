@@ -206,7 +206,8 @@ async def advance(
                                 ticket_id,
                                 state="AWAITING_PLAN_APPROVAL",
                                 current_step="plan_review",
-                                error="Plan reviewer requested changes; inspect plan-review.json.",
+                                error="[plan_rejected] Plan revision budget exhausted; "
+                                "inspect plan-review.json and edit/review the plan.",
                             )
                             return "AWAITING_PLAN_APPROVAL"
                         continue

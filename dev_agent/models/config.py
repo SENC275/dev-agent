@@ -77,6 +77,7 @@ class GatesConfig(StrictModel):
 
 class LimitsConfig(StrictModel):
     max_fix_cycles: int = Field(default=2, ge=0)
+    max_plan_revisions: int = Field(default=2, ge=0, le=10)
 
 
 class KnowledgeConfig(StrictModel):

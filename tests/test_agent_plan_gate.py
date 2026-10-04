@@ -35,6 +35,22 @@ class Reviewing(PipelineProvider):
                     else [],
                 }
             )
+            if self.mode == "approve_with_issues":
+                output = json.dumps(
+                    {
+                        "decision": "approve",
+                        "summary": "Review complete.",
+                        "issues": ["Unresolved issue."],
+                    }
+                )
+            if self.mode == "changes_without_issues":
+                output = json.dumps(
+                    {
+                        "decision": "request_changes",
+                        "summary": "Review complete.",
+                        "issues": [],
+                    }
+                )
             if self.mode == "malformed":
                 output = "Looks good!"
             if self.mode == "edit_source":
@@ -50,6 +66,8 @@ class Reviewing(PipelineProvider):
 
 def setup(repository: Path, mode: str = "approve") -> tuple:
     config = ProjectConfig(commands=commands(), gates=GatesConfig(plan_review="agent"))
+    if mode == "request_changes":
+        config.limits.max_plan_revisions = 0
     journal = Journal(repository)
     journal.create("AUTO-1", "Improve app", config.model_dump_json())
     provider = Reviewing(mode)
@@ -153,3 +171,28 @@ def test_approval_with_blocking_issues_is_invalid() -> None:
 
     with pytest.raises(ValidationError):
         PlanReview(decision="approve", summary="Fine", issues=["Missing tests"])
+
+
+@pytest.mark.parametrize("mode", ["approve_with_issues", "changes_without_issues"])
+def test_conflicting_decision_is_saved_and_resume_retries_only_review(repository: Path, mode: str):
+    journal, config, provider, registry = setup(repository, mode)
+    with pytest.raises(ValueError, match="decision conflicts with issues"):
+        asyncio.run(advance(journal, "AUTO-1", config, registry))
+    plan = Path(journal.get("AUTO-1")["plan_path"])
+    attempts = list((plan / "plan-review-attempts").iterdir())
+    assert len(attempts) == 2
+    response = json.loads((attempts[0] / "response.txt").read_text())
+    assert response["decision"] == (
+        "approve" if mode == "approve_with_issues" else "request_changes"
+    )
+    assert (attempts[0] / "error.txt").exists()
+    assert not (plan / "approval.json").exists()
+    assert not (plan / "worktree.json").exists()
+    before = len(provider.tasks)
+    provider.mode = "approve"
+    assert asyncio.run(advance(journal, "AUTO-1", config, registry)) == "READY_FOR_HUMAN_REVIEW"
+    assert provider.tasks[before].role == "reviewer"
+    assert "approve requires issues=[]" in provider.tasks[before].prompt
+    assert [task.role for task in provider.tasks].count("planner") == 1
+    assert [task.role for task in provider.tasks].count("implementer") == 1
+    assert len(list((plan / "plan-review-attempts").iterdir())) == 3

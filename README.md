@@ -153,3 +153,11 @@ dev-agent resume DEMO-001 --additional-fix-cycles 2
 The extra budget is recorded with the ticket; the frozen YAML configuration stays
 unchanged. Plain `resume` never replenishes it. Interrupted or uncertain writes still
 require inspection and are not replayed automatically.
+
+Agent plan review corrects an invalid structured response once. An actual rejection
+returns feedback to the read-only planner, then independently reviews the revised
+plan. `limits.max_plan_revisions` defaults to 2 (0 disables automatic plan changes).
+The budget persists across resume; exhausted plans require human review. Responses
+and plan versions stay in `.dev-agent/`. Progress shows `correct_output` or
+`revise_plan`; failures distinguish `model_output`, `provider_execution`, and
+`plan_rejected`. No invalid response or rejected plan grants implementation approval.

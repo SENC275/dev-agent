@@ -19,6 +19,8 @@ validation:
 # Maximum fixer calls across this plan's recorded history.
 limits:
   max_fix_cycles: 2
+  # Read-only planner revisions after rejection; 0 requests human input immediately.
+  max_plan_revisions: 2
 
 # Plan review: human (default) or an independent read-only agent.
 gates:

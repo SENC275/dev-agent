@@ -333,7 +333,8 @@ def _managed(ticket_id: str, file: Path | None = None, *, additional_fix_cycles:
             console.print(f"Plan: {plan_path}", markup=False)
             if config.gates.plan_review == "agent":
                 console.print(
-                    f"Plan needs human attention. Review: {Path(plan_path) / 'plan-review.json'}",
+                    f"[plan_rejected] Automatic plan revisions exhausted. "
+                    f"Review: {Path(plan_path) / 'plan-review.json'}",
                     markup=False,
                 )
             if run_plan_gate(Path(plan_path), console):
@@ -345,6 +346,18 @@ def _managed(ticket_id: str, file: Path | None = None, *, additional_fix_cycles:
                     )
         console.print(journal.formatted(ticket_id), markup=False)
         if state != "READY_FOR_HUMAN_REVIEW":
+            paused = journal.get(ticket_id)
+            if paused["current_step"] in {"validation_fix", "fix"} and paused["plan_path"]:
+                report = ValidationRun.model_validate_json(
+                    (Path(paused["plan_path"]) / "validation.json").read_bytes()
+                )
+                if not report.success:
+                    console.print(
+                        f"[validation_failed] {failure_summary(report)}. "
+                        f"Inspect {Path(paused['plan_path']) / 'validation.json'}; "
+                        f"after fixing the cause: dev-agent resume {ticket_id}",
+                        markup=False,
+                    )
             raise typer.Exit(2)
         console.print("Ready for human review. Inspect the final diff in the worktree.")
         if config.knowledge.enabled:
@@ -361,6 +374,10 @@ def _stage(journal: Journal, ticket_id: str) -> str:
     try:
         run = journal.get(ticket_id)
         label = f"{ticket_id}: {run['current_step'] or run['state']}"
+        if run["current_step"] == "plan_review" and run["plan_path"]:
+            progress = Path(run["plan_path"]) / "plan-review-status.json"
+            if progress.exists():
+                label += ":" + str(json.loads(progress.read_text()).get("stage", "review"))
         if run["current_step"] == "validation_fix" and run["plan_path"]:
             report = json.loads((Path(run["plan_path"]) / "validation.json").read_text())
             if report.get("status") == "FAILED":
