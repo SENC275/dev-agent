@@ -10,6 +10,8 @@ from datetime import UTC, datetime
 from pathlib import Path
 from uuid import uuid4
 
+from dev_agent.local import protect_local_files
+
 
 def now() -> str:
     return datetime.now(UTC).isoformat()
@@ -18,6 +20,7 @@ def now() -> str:
 class Journal:
     def __init__(self, repository: Path):
         self.repository = repository.resolve(strict=True)
+        protect_local_files(self.repository)
         directory = self.repository / ".dev-agent"
         if directory.is_symlink():
             raise ValueError("Refusing symlink state directory.")

@@ -45,7 +45,7 @@ def test_readonly_draft_with_authoritative_commands(repository):
     provider, providers = registry()
     path = asyncio.run(generate_ticket(repository, "DEMO-1", "增加筛选", providers))
     text = path.read_text()
-    assert path == repository / "tickets/DEMO-1.md"
+    assert path == repository / ".dev-agent/tickets/DEMO-1.md"
     assert "增加筛选" in text and "## Open Questions" in text
     assert "test: `pytest`" in text
     assert "是否需要组合其他筛选条件" in text
@@ -61,10 +61,11 @@ def test_preflight_without_model_call(repository, tmp_path, mode):
     provider, providers = registry()
     ticket_id, description = "DEMO-1", "description"
     if mode == "exists":
-        (repository / "tickets").mkdir()
-        (repository / "tickets/DEMO-1.md").write_text("keep")
+        (repository / ".dev-agent/tickets").mkdir(parents=True)
+        (repository / ".dev-agent/tickets/DEMO-1.md").write_text("keep")
     elif mode == "symlink":
-        (repository / "tickets").symlink_to(tmp_path, target_is_directory=True)
+        (repository / ".dev-agent").mkdir(exist_ok=True)
+        (repository / ".dev-agent/tickets").symlink_to(tmp_path, target_is_directory=True)
     elif mode == "bad_id":
         ticket_id = "../escape"
     elif mode == "empty":
@@ -81,7 +82,7 @@ def test_no_draft_on_invalid_or_failed_result(repository, output, success):
     _, providers = registry(output, success)
     with pytest.raises(ValueError):
         asyncio.run(generate_ticket(repository, "DEMO-1", "description", providers))
-    assert not (repository / "tickets/DEMO-1.md").exists()
+    assert not (repository / ".dev-agent/tickets/DEMO-1.md").exists()
 
 
 def test_readonly_violation_detected(repository):
@@ -95,7 +96,7 @@ def test_readonly_violation_detected(repository):
     with patch.object(provider, "execute", side_effect=changed):
         with pytest.raises(ValueError, match="Repository changed"):
             asyncio.run(generate_ticket(repository, "DEMO-1", "description", providers))
-    assert not (repository / "tickets/DEMO-1.md").exists()
+    assert not (repository / ".dev-agent/tickets/DEMO-1.md").exists()
 
 
 def test_concurrent_output_is_never_overwritten(repository):
@@ -103,14 +104,14 @@ def test_concurrent_output_is_never_overwritten(repository):
     original = provider.execute
 
     async def changed(task):
-        (repository / "tickets").mkdir()
-        (repository / "tickets/DEMO-1.md").write_text("human draft")
+        (repository / ".dev-agent/tickets").mkdir(parents=True)
+        (repository / ".dev-agent/tickets/DEMO-1.md").write_text("human draft")
         return await original(task)
 
     with patch.object(provider, "execute", side_effect=changed):
         with pytest.raises(ValueError):
             asyncio.run(generate_ticket(repository, "DEMO-1", "description", providers))
-    assert (repository / "tickets/DEMO-1.md").read_text() == "human draft"
+    assert (repository / ".dev-agent/tickets/DEMO-1.md").read_text() == "human draft"
 
 
 def test_cli_file_input_and_mutually_exclusive_options(repository, tmp_path):

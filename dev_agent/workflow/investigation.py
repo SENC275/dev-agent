@@ -9,6 +9,7 @@ from pathlib import Path
 from uuid import uuid4
 
 from dev_agent.artifacts import ArtifactValidationError, parse_artifact
+from dev_agent.local import protect_local_files
 from dev_agent.models.agent import AgentTask
 from dev_agent.models.artifact import ArtifactModel
 from dev_agent.models.investigation import Exploration, PatternAnalysis, TestAnalysis
@@ -78,6 +79,7 @@ async def investigate(
     if not ticket.strip():
         raise ValueError("Ticket must not be empty.")
     repository = repository.resolve(strict=True)
+    protect_local_files(repository)
     if not repository.is_dir():
         raise ValueError("Repository must be a directory.")
     specs: tuple[tuple[str, str, str, type[ArtifactModel]], ...] = (

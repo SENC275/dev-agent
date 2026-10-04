@@ -25,6 +25,6 @@ gates:
   plan_review: human
   approve_final: true
 
-# Draft reusable knowledge alongside code; reviewed and accepted at final merge.
+# Opt in to knowledge documents committed alongside code. Disabled for local-only use.
 knowledge:
-  enabled: true
+  enabled: false

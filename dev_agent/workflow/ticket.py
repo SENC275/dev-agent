@@ -7,6 +7,7 @@ from pathlib import Path
 from dev_agent.artifacts import parse_artifact
 from dev_agent.git.snapshot import capture_snapshot
 from dev_agent.git.worktree import git
+from dev_agent.local import protect_local_files
 from dev_agent.models.agent import AgentTask
 from dev_agent.models.ticket import TicketDraft
 from dev_agent.providers.registry import ProviderRegistry
@@ -14,9 +15,9 @@ from dev_agent.workflow.implementation import _instructions
 
 
 def _destination(repository: Path, ticket_id: str) -> Path:
-    folder = repository / "tickets"
+    folder = repository / ".dev-agent" / "tickets"
     path = folder / f"{ticket_id}.md"
-    if folder.is_symlink() or path.is_symlink():
+    if folder.parent.is_symlink() or folder.is_symlink() or path.is_symlink():
         raise ValueError("Ticket output must not be a symlink.")
     if folder.exists() and not folder.is_dir():
         raise ValueError("tickets must be a directory.")
@@ -65,6 +66,7 @@ async def generate_ticket(
     if not description.strip() or len(description.encode("utf-8")) > 32_000:
         raise ValueError("Provide a nonempty description of at most 32 KB.")
     repository = repository.resolve(strict=True)
+    protect_local_files(repository)
     if Path(await git(repository, "rev-parse", "--show-toplevel")).resolve() != repository:
         raise ValueError("Run ticket generation from the repository root.")
     output = _destination(repository, ticket_id)
@@ -118,7 +120,7 @@ async def generate_ticket(
         raise ValueError(result.error or "Ticket planner failed; check provider configuration.")
     draft = parse_artifact(result.output, TicketDraft)
     output = _destination(repository, ticket_id)
-    output.parent.mkdir(exist_ok=True)
+    output.parent.mkdir(parents=True, exist_ok=True)
     output = _destination(repository, ticket_id)
     with output.open("x", encoding="utf-8") as stream:
         stream.write(

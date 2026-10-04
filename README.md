@@ -53,16 +53,18 @@ dev-agent ticket DEMO-001 --description "Add optional done filtering to GET /tas
 # Or: dev-agent ticket DEMO-001 --file /path/to/requirement.md
 ```
 
-Review `tickets/DEMO-001.md`, resolve open questions, and edit the acceptance
+Review `.dev-agent/tickets/DEMO-001.md`, resolve open questions, and edit the acceptance
 criteria as needed. Generation only creates a draft; implementation starts separately.
 You can also write your own Markdown ticket.
 
 Before starting, commit intended project changes and ensure `git status --short`
-is empty. This gives the worktree a reproducible baseline. Local configuration may
-be ignored by Git; configure it before starting and keep it unchanged during a run.
+is empty. This gives the worktree a reproducible baseline. `init` excludes `.dev-agent.yaml` and `.dev-agent/` through Git’s local
+`info/exclude`, without changing `.gitignore`. Tickets, configuration, and run records
+do not need commits. Keep configuration unchanged during a run. Existing tracked files
+remain tracked; exclusions do not remove them from Git history.
 
 ```bash
-dev-agent start DEMO-001 --file tickets/DEMO-001.md
+dev-agent start DEMO-001 --file .dev-agent/tickets/DEMO-001.md
 dev-agent status DEMO-001
 ```
 
@@ -106,8 +108,9 @@ it does not push, deploy, or apply database migrations.
 
 ## Reusable knowledge
 
-New `init` configurations enable knowledge candidates. For an existing project, add
-this before starting a new ticket (omit it or use `false` to keep the old behavior):
+Knowledge documents are disabled by default so tool-generated documents do not enter
+code commits. Investigation records remain local in `.dev-agent/`. To explicitly opt
+in to reviewing and committing knowledge documents, configure this before a new ticket:
 
 ```yaml
 knowledge:

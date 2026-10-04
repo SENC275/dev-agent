@@ -1,8 +1,8 @@
 # Knowledge candidates
 
 Enable `knowledge.enabled: true` in `.dev-agent.yaml` before starting a new ticket.
-New `dev-agent init` configurations include it; old configurations without the field
-remain disabled. Do not change configuration midway through a managed run.
+New `dev-agent init` configurations disable it for local-only use. Enabling it
+explicitly adds a knowledge document to the reviewed code commit. Do not change configuration midway through a managed run.
 
 ## Lifecycle
 

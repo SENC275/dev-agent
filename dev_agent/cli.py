@@ -44,9 +44,12 @@ def init() -> None:
     try:
         path = initialize_config(Path.cwd())
     except FileExistsError:
-        console.print(f"{CONFIG_NAME} already exists; kept unchanged.", markup=False)
+        console.print(
+            f"{CONFIG_NAME} already exists; kept unchanged. Local Git exclusions configured.",
+            markup=False,
+        )
         raise typer.Exit(1) from None
-    except OSError:
+    except (OSError, ValueError):
         console.print("Cannot create configuration; check directory permissions.", markup=False)
         raise typer.Exit(1) from None
     console.print(f"Created {path}\nNext: dev-agent doctor", markup=False)
@@ -77,7 +80,7 @@ def ticket(
         Path | None, typer.Option("--file", exists=True, dir_okay=False, readable=True)
     ] = None,
 ) -> None:
-    """Draft tickets/ID.md from a description using the read-only planner."""
+    """Draft .dev-agent/tickets/ID.md from a description using the read-only planner."""
     try:
         if description is not None and file is not None:
             raise ValueError("Use either --description or --file, not both.")
@@ -97,11 +100,12 @@ def ticket(
             )
         console.print(f"Draft: {output}", markup=False)
         console.print(
-            "Review the draft, resolve open questions, and commit intended changes before start.",
+            "Review the local draft and resolve open questions. No ticket commit is required.",
             markup=False,
         )
         console.print(
-            f"Next: dev-agent start {ticket_id} --file tickets/{ticket_id}.md", markup=False
+            f"Next: dev-agent start {ticket_id} --file .dev-agent/tickets/{ticket_id}.md",
+            markup=False,
         )
     except (ValueError, OSError, ConfigurationError) as exc:
         console.print(f"Ticket generation stopped: {exc}", markup=False)

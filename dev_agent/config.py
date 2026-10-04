@@ -6,6 +6,7 @@ from pathlib import Path
 import yaml
 from pydantic import ValidationError
 
+from dev_agent.local import protect_local_files
 from dev_agent.models.config import ProjectConfig
 
 CONFIG_NAME = ".dev-agent.yaml"
@@ -43,6 +44,7 @@ def load_config(path: Path) -> ProjectConfig:
 
 
 def initialize_config(directory: Path) -> Path:
+    protect_local_files(directory)
     path = directory / CONFIG_NAME
     template = files("dev_agent").joinpath("default.yaml").read_text(encoding="utf-8")
     with path.open("x", encoding="utf-8") as stream:
