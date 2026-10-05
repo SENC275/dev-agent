@@ -2,6 +2,7 @@
 
 import asyncio
 import json
+import shlex
 import sqlite3
 import sys
 from pathlib import Path
@@ -15,6 +16,7 @@ from dev_agent.config import CONFIG_NAME, ConfigurationError, initialize_config,
 from dev_agent.doctor import check_environment, is_git_repository
 from dev_agent.git.worktree import clean_baseline, create_approved_worktree
 from dev_agent.models.finding import Review
+from dev_agent.process import run_process
 from dev_agent.progress import activity
 from dev_agent.providers.registry import ProviderRegistry
 from dev_agent.validation.runner import ValidationRun, failure_summary
@@ -70,6 +72,41 @@ def doctor() -> None:
     console.print("\nFix the checks above, then rerun dev-agent doctor." if failed else "\nReady.")
     if failed:
         raise typer.Exit(1)
+
+
+@app.command("test")
+def test_command(
+    config_file: Annotated[
+        Path,
+        typer.Option("--config", help="Config file; tests still run in the current directory."),
+    ] = Path(CONFIG_NAME),
+) -> None:
+    """Run only commands.test in the current directory, without AI or a ticket."""
+    try:
+        config = load_config(config_file)
+        arguments = shlex.split(config.commands.test)
+        if not arguments:
+            raise ValueError("commands.test must not be empty.")
+        console.print(f"Test directory: {Path.cwd()}", markup=False)
+        console.print(f"Command: {config.commands.test}", markup=False)
+        with activity(console, "Running configured test command…"):
+            result = asyncio.run(
+                run_process(arguments, cwd=Path.cwd(), timeout=config.validation.timeout_seconds)
+            )
+    except (ConfigurationError, ValueError, OSError) as exc:
+        console.print(f"Test could not run: {exc}", markup=False)
+        raise typer.Exit(1) from None
+    if result.stdout:
+        typer.echo(result.stdout, nl=False)
+    if result.stderr:
+        typer.echo(result.stderr, err=True, nl=False)
+    if result.timed_out:
+        console.print(f"Test timed out after {config.validation.timeout_seconds:g}s.", markup=False)
+        raise typer.Exit(124)
+    if result.exit_code:
+        console.print(f"Test failed (exit {result.exit_code}).", markup=False)
+        raise typer.Exit(result.exit_code if result.exit_code > 0 else 128 - result.exit_code)
+    console.print(f"Test passed ({result.duration_seconds:.1f}s).", markup=False)
 
 
 @app.command()

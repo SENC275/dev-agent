@@ -44,6 +44,21 @@ For provider configuration, see the [default config](.dev-agent.example.yaml),
 [Claude/mixed example](examples/claude.yaml), and [Ollama example](examples/ollama.yaml).
 Adapt model names, server addresses, and role assignments to your environment.
 
+## Run tests manually
+
+```bash
+dev-agent test
+# From a worktree without a local YAML, use the original project's configuration:
+dev-agent test --config /path/to/your-project/.dev-agent.yaml
+```
+
+Runs only `commands.test` in the current directory, without AI, a ticket, or a clean
+Git baseline. Uses `validation.timeout_seconds`; prints a heartbeat while waiting and
+stdout/stderr after completion. Returns the command's exit code (124 on timeout).
+Commands use the same argument parsing as workflow validation: use explicit
+`sh -c 'first && second'` for shell operators. This manual check does not change ticket
+status or replace the workflow's recorded validation and review.
+
 ## Create and run a ticket
 
 Generate a draft from a description using your configured planner:
