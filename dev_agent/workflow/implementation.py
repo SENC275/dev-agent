@@ -113,7 +113,6 @@ async def implement(directory: Path, registry: ProviderRegistry) -> Implementati
         )
     if await git(target, "status", "--porcelain", "--untracked-files=all"):
         raise ValueError("Worktree has existing changes; inspect them rather than overwriting.")
-    provider = registry.resolve("implementer")
     plan = await checked_plan(directory)
     bundle = {
         "ticket": _local_file(run, "ticket.md").read_text(encoding="utf-8"),
@@ -162,7 +161,7 @@ async def implement(directory: Path, registry: ProviderRegistry) -> Implementati
             raise ValueError("Worktree changed before implementation.")
         _write(output, json.dumps(data, indent=2) + "\n")
         started = True
-        result = await provider.execute(task)
+        result = await registry.execute("implement", directory, task)
         changes = await _changed_files(target, base)
         data.update(
             {

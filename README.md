@@ -138,6 +138,24 @@ The independent reviewer checks them alongside code; `revise` can correct or rej
 them. Final merge accepts both together, without another early approval gate.
 See [knowledge workflow](docs/knowledge-workflow.md) for details.
 
+## Reuse ticket context
+
+Related file indexes and investigation evidence are reused within each ticket by default.
+Later roles receive at most 4000 extra characters, with changed source files flagged.
+Old/mismatched caches fall back to normal research; reviewers still verify current code.
+Opt into Explorer-first investigation with `context.investigation_mode: explorer_first`;
+`single_pass` uses one investigator to produce all three reports. Both are opt-in;
+`parallel` remains the default.
+No extra model calls or Git-tracked knowledge files are created. See
+[context reuse and configuration](docs/context-reuse.md).
+
+## Measure model usage
+
+Run `dev-agent usage TICKET-ID` for per-stage/role token counts, cache usage, calls and
+durations. Use `--json` to export measurements for comparisons. Records stay local;
+missing metrics are unknown, and older runs cannot be reconstructed. Cache tokens are
+already included in input totals. See [accounting and comparison guidance](docs/usage.md).
+
 ## More
 
 - [CRUD demo](examples/crud-app/README.md)

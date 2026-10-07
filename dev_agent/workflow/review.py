@@ -87,7 +87,6 @@ async def review(
         "schema": Review.model_json_schema(),
         "knowledge": knowledge_context(directory, registry.config),
     }
-    provider = registry.resolve("reviewer")
     output = directory / "reviews" / uuid4().hex
     if not output.resolve().is_relative_to(directory):
         raise ValueError("Review artifacts must stay inside the plan directory.")
@@ -122,14 +121,16 @@ async def review(
             raise ValueError("Validation changed before review; retry with the current result.")
         if (await capture_snapshot(target, base)).fingerprint != snapshot.fingerprint:
             raise ValueError("Code changed before review; rerun validation.")
-        result = await provider.execute(
+        result = await registry.execute(
+            "review",
+            directory,
             AgentTask(
                 role="reviewer",
                 prompt=prompt + "\nInput bundle:\n" + json.dumps(bundle),
                 working_directory=target,
                 read_only=True,
                 output_schema=Review.model_json_schema(),
-            )
+            ),
         )
         metadata.update(
             exit_code=result.exit_code,

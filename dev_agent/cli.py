@@ -6,10 +6,11 @@ import shlex
 import sqlite3
 import sys
 from pathlib import Path
-from typing import Annotated
+from typing import Annotated, Any
 
 import typer
 from rich.console import Console
+from rich.table import Table
 
 from dev_agent.artifacts import parse_artifact
 from dev_agent.config import CONFIG_NAME, ConfigurationError, initialize_config, load_config
@@ -19,6 +20,7 @@ from dev_agent.models.finding import Review
 from dev_agent.process import run_process
 from dev_agent.progress import activity
 from dev_agent.providers.registry import ProviderRegistry
+from dev_agent.usage import usage_report
 from dev_agent.validation.runner import ValidationRun, failure_summary
 from dev_agent.validation.runner import validate as run_validation
 from dev_agent.workflow.agent_plan_gate import review_plan_by_agent
@@ -72,6 +74,56 @@ def doctor() -> None:
     console.print("\nFix the checks above, then rerun dev-agent doctor." if failed else "\nReady.")
     if failed:
         raise typer.Exit(1)
+
+
+@app.command("usage")
+def usage_command(
+    ticket_id: Annotated[str | None, typer.Argument()] = None,
+    json_output: Annotated[
+        bool, typer.Option("--json", help="Export records and summaries.")
+    ] = False,
+) -> None:
+    """Show recorded model usage by stage and role; no provider calls."""
+    try:
+        report = usage_report(Path.cwd(), ticket_id)
+    except (OSError, ValueError, KeyError, TypeError) as exc:
+        console.print(f"Cannot read usage: {exc}", markup=False)
+        raise typer.Exit(1) from None
+    if json_output:
+        typer.echo(json.dumps(report, indent=2))
+        return
+    if not report["recorded_calls"]:
+        console.print("No recorded usage. Older calls cannot be reconstructed.")
+        return
+    for row in report["groups"]:
+        console.print(
+            f"{row['stage']} / {row['role']} / {row['provider']} ({row['model']}) "
+            f"— {row['calls']} calls, {row['failed_calls']} failed, "
+            f"{row['running_calls']} running",
+            markup=False,
+        )
+        table = Table()
+        for column in ("Input", "Output", "Cache read", "Cache write", "Seconds", "Complete"):
+            table.add_column(column, overflow="fold")
+
+        def metric(key: str, row: dict[str, Any] = row) -> str:
+            value = row[key]
+            if value is None:
+                return "unknown"
+            suffix = "*" if row[key + "_known_calls"] < row["calls"] else ""
+            return str(value) + suffix
+
+        table.add_row(
+            metric("input_tokens"),
+            metric("output_tokens"),
+            metric("cache_read_tokens"),
+            metric("cache_write_tokens"),
+            f"{row['duration_seconds']:.1f}",
+            f"{row['complete_calls']}/{row['calls']}",
+        )
+        console.print(table)
+    console.print(report["note"], markup=False)
+    console.print("* = some calls lack this metric. Complete covers input/output accounting.")
 
 
 @app.command("test")
@@ -162,7 +214,7 @@ def investigate(
             raise ValueError("Run inside a Git working tree with .dev-agent.yaml.")
         ticket = file.read_text(encoding="utf-8")
         console.print("Investigating code paths, existing patterns, and tests…", markup=False)
-        with activity(console, "Three read-only investigation roles running…"):
+        with activity(console, "Read-only investigation running…"):
             result = asyncio.run(
                 run_investigation(
                     ticket_id=ticket_id,

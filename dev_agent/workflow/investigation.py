@@ -1,4 +1,4 @@
-"""Parallel read-only investigation with validated, per-run artifacts."""
+"""Read-only investigation with optional Explorer-first evidence handoff."""
 
 import asyncio
 import json
@@ -9,10 +9,16 @@ from pathlib import Path
 from uuid import uuid4
 
 from dev_agent.artifacts import ArtifactValidationError, parse_artifact
+from dev_agent.context import finish, initialize
 from dev_agent.local import protect_local_files
 from dev_agent.models.agent import AgentTask
 from dev_agent.models.artifact import ArtifactModel
-from dev_agent.models.investigation import Exploration, PatternAnalysis, TestAnalysis
+from dev_agent.models.investigation import (
+    CombinedInvestigation,
+    Exploration,
+    PatternAnalysis,
+    TestAnalysis,
+)
 from dev_agent.providers.registry import ProviderRegistry
 
 
@@ -87,7 +93,14 @@ async def investigate(
         ("pattern_researcher", "patterns", "patterns.json", PatternAnalysis),
         ("test_researcher", "tests", "tests.json", TestAnalysis),
     )
-    # Resolve providers and resources before creating a run or launching work.
+    mode = (
+        registry.config.context.investigation_mode
+        if registry.config.context.enabled
+        else "parallel"
+    )
+    if mode == "single_pass":
+        specs = (("explorer", "investigate", "combined-investigation.json", CombinedInvestigation),)
+    # Resolve only participating providers before creating a run or launching work.
     jobs = [
         (role, name, model, registry.resolve(role), _prompt(ticket, repository, template, model))
         for role, template, name, model in specs
@@ -107,6 +120,14 @@ async def investigate(
                     "run_id": directory.name,
                     "repository": str(repository),
                     "status": status,
+                    "investigation_mode": mode,
+                    "report_producers": {
+                        "exploration.json": "explorer",
+                        "patterns.json": "explorer"
+                        if mode == "single_pass"
+                        else "pattern_researcher",
+                        "tests.json": "explorer" if mode == "single_pass" else "test_researcher",
+                    },
                     "steps": [asdict(result) for result in results],
                 },
                 indent=2,
@@ -114,17 +135,42 @@ async def investigate(
             + "\n",
         )
 
+    focused = mode == "explorer_first"
+
     async def run(index: int) -> StepResult:
         role, name, model, provider, prompt = jobs[index]
+        if focused:
+            prompt += (
+                "\nKeep research bounded to this ticket. Report concise file:line evidence, "
+                "not whole file contents. Prefer up to six relevant entries per list; do not "
+                "omit material risks merely to meet this preference. "
+            )
+            if role == "explorer":
+                prompt += (
+                    "Locate the change surface, dependencies and likely related test paths. "
+                    "Do not exhaustively catalogue unrelated architecture or tests: specialist "
+                    "roles will inspect patterns and test coverage afterwards."
+                )
+            else:
+                prompt += (
+                    "If shared Explorer evidence is supplied, start with those paths and "
+                    "perform only your specialist's missing research. Verify citations in "
+                    "current source. Do not repeat the general repository survey. Expand "
+                    "search whenever a gap, contradiction or dependency requires it; record "
+                    "unresolved gaps explicitly. If no usable evidence is supplied, conduct "
+                    "your normal independent investigation."
+                )
         try:
-            result = await provider.execute(
+            result = await registry.execute(
+                "investigate",
+                directory,
                 AgentTask(
                     role=role,
                     prompt=prompt,
                     working_directory=repository,
                     read_only=True,
                     output_schema=model.model_json_schema(),
-                )
+                ),
             )
             if not result.success or result.timed_out or result.exit_code != 0:
                 return StepResult(
@@ -139,6 +185,14 @@ async def investigate(
                 )
             artifact = parse_artifact(result.output, model)
             _write(directory / name, artifact.model_dump_json(indent=2) + "\n")
+            if isinstance(artifact, CombinedInvestigation):
+                # Validate the entire envelope before publishing any component report.
+                for filename, report in (
+                    ("exploration.json", artifact.exploration),
+                    ("patterns.json", artifact.patterns),
+                    ("tests.json", artifact.tests),
+                ):
+                    _write(directory / filename, report.model_dump_json(indent=2) + "\n")
             return StepResult(
                 role,
                 artifact=name,
@@ -152,20 +206,31 @@ async def investigate(
                 role, error=f"Execution or artifact I/O failed ({type(exc).__name__})."
             )
 
+    await initialize(repository, ticket_id, ticket, directory, registry.config.context)
     manifest("RUNNING", [])
     tasks: list[asyncio.Task[StepResult]] = []
+    initial: list[StepResult] = []
     try:
+        if focused:
+            initial.append(await run(0))
+            manifest("RUNNING", initial)
+            if initial[0].error is None:
+                await finish(repository, directory, registry.config.context, exploration_only=True)
         async with asyncio.TaskGroup() as group:
-            tasks = [group.create_task(run(index)) for index in range(len(jobs))]
+            tasks = [
+                group.create_task(run(index)) for index in range(1 if focused else 0, len(jobs))
+            ]
     except BaseException:
         completed = [
             task.result()
             for task in tasks
             if task.done() and not task.cancelled() and task.exception() is None
         ]
-        manifest("INTERRUPTED", completed)
+        manifest("INTERRUPTED", initial + completed)
         raise
-    results = [task.result() for task in tasks]
+    results = initial + [task.result() for task in tasks]
     errors = {result.role: result.error for result in results if result.error is not None}
     manifest("FAILED" if errors else "COMPLETE", results)
+    if not errors:
+        await finish(repository, directory, registry.config.context)
     return InvestigationRun(directory, errors)

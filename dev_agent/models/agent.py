@@ -5,6 +5,8 @@ from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from dev_agent.models.usage import TokenUsage
+
 
 class AgentTask(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
@@ -19,6 +21,7 @@ class AgentTask(BaseModel):
 class AgentResult(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
 
+    usage: TokenUsage = Field(default_factory=TokenUsage)
     success: bool
     output: str
     exit_code: int

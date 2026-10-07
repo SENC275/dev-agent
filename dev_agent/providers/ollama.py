@@ -5,6 +5,7 @@ import json
 import re
 import stat
 import time
+from contextvars import ContextVar
 from pathlib import Path
 from typing import Any, Protocol
 
@@ -15,7 +16,10 @@ from jsonschema.exceptions import SchemaError
 from dev_agent.git.worktree import git
 from dev_agent.models.agent import AgentResult, AgentTask
 from dev_agent.models.config import ProviderConfig
+from dev_agent.models.usage import TokenUsage, combine, ollama_usage
 from dev_agent.providers.base import AgentProvider
+
+_usage_items: ContextVar[list[TokenUsage]] = ContextVar("ollama_usage_items")
 
 MAX_FILE = 48_000
 BLOCKED = {".git", ".dev-agent", ".venv", "node_modules", "__pycache__", ".ssh"}
@@ -155,10 +159,13 @@ class OllamaProvider(AgentProvider):
 
     async def execute(self, task: AgentTask) -> AgentResult:
         started = time.monotonic()
+        items: list[TokenUsage] = []
+        token = _usage_items.set(items)
         try:
             async with asyncio.timeout(self.config.timeout_seconds):
                 output = await self._execute(task)
             return AgentResult(
+                usage=combine(items, "ollama.chat"),
                 success=True,
                 output=output,
                 exit_code=0,
@@ -167,6 +174,7 @@ class OllamaProvider(AgentProvider):
         except (ValueError, OSError, httpx.HTTPError, TimeoutError) as exc:
             timeout = isinstance(exc, (TimeoutError, httpx.TimeoutException))
             return AgentResult(
+                usage=combine(items, "ollama.chat").model_copy(update={"complete": False}),
                 success=False,
                 output="",
                 exit_code=1,
@@ -175,12 +183,15 @@ class OllamaProvider(AgentProvider):
                 error=f"Ollama failed: {type(exc).__name__}: {exc}",
             )
 
+        finally:
+            _usage_items.reset(token)
+
     async def _request(
         self, messages: list[dict[str, str]], schema: dict[str, Any]
     ) -> dict[str, Any]:
         if len(json.dumps([messages, schema], ensure_ascii=False)) > self.config.num_ctx * 3:
             raise ValueError("Conversation too large; increase num_ctx or use a smaller task.")
-        return await self.transport(
+        result = await self.transport(
             self.config.base_url.rstrip("/"),
             {
                 "model": self.config.model,
@@ -196,6 +207,9 @@ class OllamaProvider(AgentProvider):
             },
             self.config.timeout_seconds,
         )
+
+        _usage_items.get().append(ollama_usage(result))
+        return result
 
     @staticmethod
     def _content(result: dict[str, Any]) -> str:

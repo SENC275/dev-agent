@@ -4,6 +4,7 @@ import json
 
 from dev_agent.models.agent import AgentResult, AgentTask
 from dev_agent.models.config import ProviderConfig
+from dev_agent.models.usage import claude_usage
 from dev_agent.process import run_process
 from dev_agent.providers.base import AgentProvider
 from dev_agent.providers.codex_cli import ProcessRunner
@@ -108,6 +109,7 @@ class ClaudeCLIProvider(AgentProvider):
             except ValueError as exc:
                 error = f"Claude response failed: {exc}"
         return AgentResult(
+            usage=claude_usage(process.stdout),
             success=error is None,
             output=output,
             error=error,

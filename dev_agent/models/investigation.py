@@ -28,3 +28,11 @@ class TestAnalysis(InvestigationArtifact):
     existing_tests: list[Text]
     fixtures: list[Text]
     recommended_tests: list[Text]
+
+
+class CombinedInvestigation(ArtifactModel):
+    """One investigator returns three fully validated downstream contracts."""
+
+    exploration: Exploration
+    patterns: PatternAnalysis
+    tests: TestAnalysis

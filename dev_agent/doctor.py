@@ -59,9 +59,18 @@ def check_environment(directory: Path) -> list[Check]:
         checks.append(Check("Environment", "Configuration", False, str(exc)))
         return checks
     checks.append(Check("Environment", "Configuration", True, CONFIG_NAME))
+    inactive = (
+        {"pattern_researcher", "test_researcher"}
+        if config.context.enabled and config.context.investigation_mode == "single_pass"
+        else set()
+    )
     available: dict[str, bool] = {}
     for name in config.providers:
-        users = [role for role, value in config.roles.items() if value.provider == name]
+        users = [
+            role
+            for role, value in config.roles.items()
+            if value.provider == name and role not in inactive
+        ]
         provider = config.providers[name]
         if provider.type == "ollama":
             if not users:
@@ -101,5 +110,10 @@ def check_environment(directory: Path) -> list[Check]:
             detail += " Optional: no roles use this provider."
         checks.append(Check("Providers", name, available[name], detail, required=bool(users)))
     for role, value in config.roles.items():
-        checks.append(Check("Roles", role, available[value.provider], f"→ {value.provider}"))
+        if role in inactive:
+            checks.append(
+                Check("Roles", role, True, "Covered by explorer (single_pass).", required=False)
+            )
+        else:
+            checks.append(Check("Roles", role, available[value.provider], f"→ {value.provider}"))
     return checks

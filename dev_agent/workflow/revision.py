@@ -121,10 +121,12 @@ async def revise(
                     }
                 )
             )
-            result = await registry.resolve("implementer").execute(
+            result = await registry.execute(
+                "revise",
+                plan_dir,
                 AgentTask(
                     role="implementer", prompt=prompt, working_directory=target, read_only=False
-                )
+                ),
             )
             record.update(
                 agent_summary=result.output,

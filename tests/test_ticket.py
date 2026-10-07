@@ -61,7 +61,7 @@ def test_preflight_without_model_call(repository, tmp_path, mode):
     provider, providers = registry()
     ticket_id, description = "DEMO-1", "description"
     if mode == "exists":
-        (repository / ".dev-agent/tickets").mkdir(parents=True)
+        (repository / ".dev-agent/tickets").mkdir(parents=True, exist_ok=True)
         (repository / ".dev-agent/tickets/DEMO-1.md").write_text("keep")
     elif mode == "symlink":
         (repository / ".dev-agent").mkdir(exist_ok=True)
@@ -104,7 +104,7 @@ def test_concurrent_output_is_never_overwritten(repository):
     original = provider.execute
 
     async def changed(task):
-        (repository / ".dev-agent/tickets").mkdir(parents=True)
+        (repository / ".dev-agent/tickets").mkdir(parents=True, exist_ok=True)
         (repository / ".dev-agent/tickets/DEMO-1.md").write_text("human draft")
         return await original(task)
 

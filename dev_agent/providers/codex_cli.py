@@ -7,6 +7,7 @@ from typing import Protocol
 
 from dev_agent.models.agent import AgentResult, AgentTask
 from dev_agent.models.config import ProviderConfig
+from dev_agent.models.usage import codex_usage
 from dev_agent.process import ProcessResult, run_process
 from dev_agent.providers.base import AgentProvider
 
@@ -36,6 +37,7 @@ class CodexCLIProvider(AgentProvider):
                 "never",
                 "exec",
                 "--ephemeral",
+                "--json",
                 "--sandbox",
                 "read-only" if task.read_only else "workspace-write",
                 "--color",
@@ -68,6 +70,7 @@ class CodexCLIProvider(AgentProvider):
             elif result.exit_code != 0:
                 error = f"Codex exited with code {result.exit_code}; inspect stderr."
             return AgentResult(
+                usage=codex_usage(result.stdout),
                 success=error is None,
                 output=output,
                 exit_code=result.exit_code,

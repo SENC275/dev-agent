@@ -5,6 +5,7 @@ import re
 from pathlib import Path
 
 from dev_agent.artifacts import parse_artifact
+from dev_agent.context import save_seed
 from dev_agent.git.snapshot import capture_snapshot
 from dev_agent.git.worktree import git
 from dev_agent.local import protect_local_files
@@ -100,14 +101,16 @@ async def generate_ticket(
             ensure_ascii=False,
         )
     )
-    result = await registry.resolve("planner").execute(
+    result = await registry.execute(
+        "ticket",
+        repository / ".dev-agent" / "tickets" / ticket_id,
         AgentTask(
             role="planner",
             prompt=prompt,
             working_directory=repository,
             read_only=True,
             output_schema=schema,
-        )
+        ),
     )
     if (
         await git(repository, "rev-parse", "--verify", "HEAD") != base
@@ -127,5 +130,14 @@ async def generate_ticket(
             render_ticket(
                 ticket_id, description.strip(), draft, registry.config.commands.model_dump()
             )
+        )
+    if registry.config.context.enabled:
+        await save_seed(
+            repository,
+            ticket_id,
+            output.read_text(),
+            draft.model_dump(),
+            base,
+            before.content_fingerprint,
         )
     return output

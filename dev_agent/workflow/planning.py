@@ -112,13 +112,15 @@ async def generate_plan(run: Path, registry: ProviderRegistry) -> Path:
     base = await _head(repository)
     clean = await clean_baseline(repository)
     prompt = files("dev_agent").joinpath("prompts/synthesize.md").read_text(encoding="utf-8")
-    result = await registry.resolve("planner").execute(
+    result = await registry.execute(
+        "plan",
+        run,
         AgentTask(
             role="planner",
             prompt=prompt + "\nInput bundle:\n" + json.dumps(bundle, ensure_ascii=False),
             working_directory=repository,
             read_only=True,
-        )
+        ),
     )
     if not result.success or result.exit_code != 0 or result.timed_out:
         raise ValueError("Planner failed; check provider authentication, model and timeout.")

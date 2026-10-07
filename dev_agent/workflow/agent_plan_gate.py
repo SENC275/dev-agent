@@ -131,14 +131,16 @@ async def review_plan_by_agent(directory: Path, registry: ProviderRegistry) -> b
                     attempt=str(attempt),
                 )
                 _write(attempt / "plan.md", plan)
-                result = await registry.resolve("reviewer").execute(
+                result = await registry.execute(
+                    "plan_review" if response_index == 0 else "plan_review_correct_output",
+                    directory,
                     AgentTask(
                         role="reviewer",
                         working_directory=repository,
                         read_only=True,
                         output_schema=PlanReview.model_json_schema(),
                         prompt=review_prompt + correction,
-                    )
+                    ),
                 )
                 _write(attempt / "response.txt", result.output)
                 _write(
@@ -230,7 +232,9 @@ async def review_plan_by_agent(directory: Path, registry: ProviderRegistry) -> b
             prompt = (
                 files("dev_agent").joinpath("prompts/synthesize.md").read_text(encoding="utf-8")
             )
-            revised = await registry.resolve("planner").execute(
+            revised = await registry.execute(
+                "plan_revision",
+                directory,
                 AgentTask(
                     role="planner",
                     working_directory=repository,
@@ -246,7 +250,7 @@ async def review_plan_by_agent(directory: Path, registry: ProviderRegistry) -> b
                             "review_feedback": decision.model_dump(),
                         }
                     ),
-                )
+                ),
             )
             _write(revision / "response.md", revised.output)
             await guard()

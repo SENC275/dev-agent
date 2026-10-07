@@ -282,14 +282,16 @@ async def fix(
                 "knowledge": knowledge_context(directory, config),
             }
             prompt = files("dev_agent").joinpath("prompts/fix.md").read_text(encoding="utf-8")
-            result = await registry.resolve("fixer").execute(
+            result = await registry.execute(
+                "fix",
+                directory,
                 AgentTask(
                     role="fixer",
                     prompt=prompt + "\nInput bundle:\n" + json.dumps(bundle),
                     working_directory=target,
                     read_only=False,
                     output_schema=FixReport.model_json_schema(),
-                )
+                ),
             )
             attempt.update(
                 exit_code=result.exit_code,

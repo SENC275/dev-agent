@@ -84,6 +84,12 @@ class KnowledgeConfig(StrictModel):
     enabled: bool = False
 
 
+class ContextConfig(StrictModel):
+    enabled: bool = True
+    investigation_mode: Literal["parallel", "explorer_first", "single_pass"] = "parallel"
+    max_characters: int = Field(default=4000, ge=2000, le=32000)
+
+
 class ProjectConfig(StrictModel):
     project: str | None = None
     providers: dict[str, ProviderConfig] = Field(
@@ -98,6 +104,7 @@ class ProjectConfig(StrictModel):
     gates: GatesConfig = Field(default_factory=GatesConfig)
     limits: LimitsConfig = Field(default_factory=LimitsConfig)
     knowledge: KnowledgeConfig = Field(default_factory=KnowledgeConfig)
+    context: ContextConfig = Field(default_factory=ContextConfig)
 
     @model_validator(mode="after")
     def validate_roles(self) -> "ProjectConfig":
