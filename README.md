@@ -153,6 +153,14 @@ Opt into Explorer-first investigation with `context.investigation_mode: explorer
 No extra model calls or Git-tracked knowledge files are created. See
 [context reuse and configuration](docs/context-reuse.md).
 
+## Review a completed ticket
+
+Run `dev-agent summary TICKET-ID` for changed files, validation results, review findings,
+token totals and diff/revise/merge commands. `--json` exports the same overview.
+Old checks are marked stale when the current code or approval no longer matches.
+This command makes no model calls and does not run tests or merge anything.
+See [review summary](docs/review-summary.md).
+
 ## Reuse project navigation across tickets
 
 Opt in with `project_context.enabled: true` to share a local index of directories,

@@ -140,6 +140,25 @@ def project_context_command(
         raise typer.Exit(1) from None
 
 
+@app.command("summary")
+def summary_command(
+    ticket_id: str,
+    json_output: Annotated[bool, typer.Option("--json")] = False,
+) -> None:
+    """Show files, validation, findings, token totals and human review actions."""
+    from dev_agent.review_summary import render, summarize
+
+    try:
+        data = asyncio.run(summarize(Journal(Path.cwd()), ticket_id))
+        if json_output:
+            typer.echo(json.dumps(data, ensure_ascii=False, indent=2))
+        else:
+            console.print(render(data), markup=False)
+    except (ValueError, OSError, sqlite3.Error) as exc:
+        console.print(str(exc), markup=False)
+        raise typer.Exit(1) from None
+
+
 @app.command("test")
 def test_command(
     config_file: Annotated[
@@ -463,6 +482,7 @@ def _managed(ticket_id: str, file: Path | None = None, *, additional_fix_cycles:
                     )
             raise typer.Exit(2)
         console.print("Ready for human review. Inspect the final diff in the worktree.")
+        console.print(f"Review summary: dev-agent summary {ticket_id}", markup=False)
         if config.knowledge.enabled:
             console.print(
                 f"Also review docs/knowledge/{ticket_id}.md in that worktree.", markup=False
@@ -521,6 +541,7 @@ def revise(
         if state != "READY_FOR_HUMAN_REVIEW":
             raise typer.Exit(2)
         console.print("Revision ready for human review. Inspect the final diff in the worktree.")
+        console.print(f"Review summary: dev-agent summary {ticket_id}", markup=False)
         if config.knowledge.enabled:
             console.print(
                 f"Also review docs/knowledge/{ticket_id}.md in that worktree.", markup=False
