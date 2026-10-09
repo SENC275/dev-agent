@@ -16,7 +16,9 @@ execution, followed by an atomic final record. Retries, fixes, plan-review corre
 plan revisions and human revisions are separate calls. Resume does not overwrite earlier
 records. A crash may leave RUNNING; this is not a successful or zero-token call.
 Telemetry stores numbers, model names, timestamps, stage/role, paths, and a prompt hash;
-it does not store prompt text, source content, provider responses or credentials.
+it does not store prompt text or full provider responses. Failed calls additionally include
+bounded, best-effort redacted error/stderr diagnostics; these are local troubleshooting
+data and may contain paths or other provider-supplied text. Review before sharing.
 
 ## Accounting
 
@@ -62,3 +64,23 @@ A repeated baseline experiment proves collection and illustrates variability, no
 Field references: [Codex JSONL](https://learn.chatgpt.com/docs/non-interactive-mode),
 [Claude usage](https://code.claude.com/docs/en/agent-sdk/cost-tracking),
 [Ollama chat](https://docs.ollama.com/api/chat).
+
+## Failure diagnostics
+
+`dev-agent status TICKET-ID` shows the latest recorded provider failure for the current
+run, its timestamp and role, the local artifact path and a conditional resume command.
+This is historical: a later successful retry does not erase it. Existing runs without
+diagnostics still work; missing past errors cannot be reconstructed.
+
+Failed invocation records have a `diagnostic` object with `kind`, `error`, `stderr`
+(when available), and a next-step hint. Kinds distinguish timeout, nonzero provider
+exit, invalid provider response, launch exception and interruption. Claude result
+`subtype` and explicit `errors` are preserved even on nonzero exit; full stdout,
+answer text and tool transcripts are not copied. Unknown exceptions retain only their
+type. Artifact schema errors and validation failures continue to use their existing
+workflow reports; a successful provider call does not prove those checks passed.
+
+Each error/stderr field is limited to 4,000 characters after best-effort credential
+redaction. This is not a guarantee that arbitrary provider text contains no sensitive
+data. Do not publish local diagnostic records without reviewing them. No automatic
+retry or additional model call is introduced.

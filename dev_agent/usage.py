@@ -9,6 +9,7 @@ from time import monotonic
 from typing import Any
 from uuid import uuid4
 
+from dev_agent.diagnostics import failure_details
 from dev_agent.models.agent import AgentResult, AgentTask
 from dev_agent.models.usage import TokenUsage
 from dev_agent.providers.base import AgentProvider
@@ -72,12 +73,21 @@ async def record_call(
             timed_out=result.timed_out,
             usage=usage.model_dump(),
         )
+        if not result.success or result.exit_code != 0 or result.timed_out:
+            record["diagnostic"] = failure_details(result)
         return result
     except BaseException as exc:
         record.update(
             status="INTERRUPTED" if isinstance(exc, asyncio.CancelledError) else "ERROR",
             error_type=type(exc).__name__,
         )
+        record["diagnostic"] = {
+            "kind": (
+                "interrupted" if isinstance(exc, asyncio.CancelledError) else "provider_exception"
+            ),
+            "error": type(exc).__name__,
+            "hint": "Inspect the provider exception before resuming.",
+        }
         raise
     finally:
         record.update(

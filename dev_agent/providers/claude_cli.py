@@ -2,6 +2,7 @@
 
 import json
 
+from dev_agent.diagnostics import redact
 from dev_agent.models.agent import AgentResult, AgentTask
 from dev_agent.models.config import ProviderConfig
 from dev_agent.models.usage import claude_usage
@@ -108,6 +109,16 @@ class ClaudeCLIProvider(AgentProvider):
                 output = result.strip()
             except ValueError as exc:
                 error = f"Claude response failed: {exc}"
+        if error is not None:
+            # Only explicit failure fields, never result text, tool calls or full stdout.
+            try:
+                envelope = json.loads(process.stdout)
+            except (ValueError, RecursionError):
+                envelope = None
+            if isinstance(envelope, dict) and envelope.get("type") == "result":
+                details = {key: envelope[key] for key in ("subtype", "errors") if key in envelope}
+                if details:
+                    error += " Provider details: " + redact(json.dumps(details))
         return AgentResult(
             usage=claude_usage(process.stdout),
             success=error is None,

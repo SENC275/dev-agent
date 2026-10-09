@@ -576,6 +576,26 @@ def status(ticket_id: str) -> None:
             console.print(
                 f"{step['name']}: {step['status']}  {step['artifact_path'] or ''}", markup=False
             )
+        run = journal.get(ticket_id)
+        records = usage_report(Path.cwd(), ticket_id)["records"]
+        failures = [r for r in records if r.get("diagnostic")
+                    and r["started_at"] >= (run["created_at"] or "")]
+        if failures:
+            latest = max(failures, key=lambda r: r["started_at"])
+            diagnostic = latest["diagnostic"]
+            console.print(
+                f"Last recorded provider failure ({latest['started_at']}, "
+                f"{latest['stage']}/{latest['role']}): [{diagnostic['kind']}] "
+                f"{diagnostic['error']}", markup=False,
+            )
+            if diagnostic.get("stderr"):
+                console.print(diagnostic["stderr"], markup=False)
+            console.print(f"Diagnostic: .dev-agent/{latest['artifact']}", markup=False)
+            console.print(diagnostic["hint"], markup=False)
+            console.print(
+                f"If the ticket is still stopped, after addressing the cause:\n"
+                f"dev-agent resume {ticket_id}", markup=False,
+            )
         console.print("State is the last recorded result; resume checks before continuing.")
     except (ValueError, OSError, sqlite3.Error) as exc:
         console.print(str(exc), markup=False)
