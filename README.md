@@ -153,6 +153,13 @@ Opt into Explorer-first investigation with `context.investigation_mode: explorer
 No extra model calls or Git-tracked knowledge files are created. See
 [context reuse and configuration](docs/context-reuse.md).
 
+## Reuse project navigation across tickets
+
+Opt in with `project_context.enabled: true` to share a local index of directories,
+convention documents and test/configuration entry points. Git and document changes
+refresh it before use. Inspect it with `dev-agent project-context` (`--refresh` rebuilds).
+No additional model calls or committed files. See [project context](docs/project-context.md).
+
 ## Measure model usage
 
 Run `dev-agent usage TICKET-ID` for per-stage/role token counts, cache usage, calls and

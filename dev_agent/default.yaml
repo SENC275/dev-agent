@@ -37,3 +37,8 @@ context:
   max_characters: 4000
   # Modes: parallel (default), explorer_first, or single_pass (one investigator).
   investigation_mode: parallel
+
+# Optional local cross-ticket navigation; no model calls or committed artifacts.
+project_context:
+  enabled: false
+  max_characters: 3000

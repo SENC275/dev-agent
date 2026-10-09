@@ -7,6 +7,7 @@ from pathlib import Path
 from dev_agent.context import prepare
 from dev_agent.models.agent import AgentResult, AgentTask
 from dev_agent.models.config import ProjectConfig, ProviderConfig
+from dev_agent.project_context import prepare as prepare_project
 from dev_agent.providers.base import AgentProvider
 from dev_agent.providers.claude_cli import ClaudeCLIProvider
 from dev_agent.providers.codex_cli import CodexCLIProvider
@@ -45,6 +46,8 @@ class ProviderRegistry:
             context_info = {"used": False, "reason": "investigation_already_in_knowledge_bundle"}
         else:
             task, context_info = prepare(task, directory, stage, self.config.context)
+        task, project_info = await prepare_project(task, stage, self.config.project_context)
+        context_info["project"] = project_info
         name = self.config.roles[task.role].provider
         config = self.config.providers[name]
         return await record_call(

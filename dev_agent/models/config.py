@@ -90,6 +90,11 @@ class ContextConfig(StrictModel):
     max_characters: int = Field(default=4000, ge=2000, le=32000)
 
 
+class ProjectContextConfig(StrictModel):
+    enabled: bool = False
+    max_characters: int = Field(default=3000, ge=1500, le=12000)
+
+
 class ProjectConfig(StrictModel):
     project: str | None = None
     providers: dict[str, ProviderConfig] = Field(
@@ -105,6 +110,7 @@ class ProjectConfig(StrictModel):
     limits: LimitsConfig = Field(default_factory=LimitsConfig)
     knowledge: KnowledgeConfig = Field(default_factory=KnowledgeConfig)
     context: ContextConfig = Field(default_factory=ContextConfig)
+    project_context: ProjectContextConfig = Field(default_factory=ProjectContextConfig)
 
     @model_validator(mode="after")
     def validate_roles(self) -> "ProjectConfig":

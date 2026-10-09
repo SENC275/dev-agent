@@ -19,6 +19,7 @@ from dev_agent.git.worktree import clean_baseline, create_approved_worktree
 from dev_agent.models.finding import Review
 from dev_agent.process import run_process
 from dev_agent.progress import activity
+from dev_agent.project_context import build as build_project_context
 from dev_agent.providers.registry import ProviderRegistry
 from dev_agent.usage import usage_report
 from dev_agent.validation.runner import ValidationRun, failure_summary
@@ -124,6 +125,19 @@ def usage_command(
         console.print(table)
     console.print(report["note"], markup=False)
     console.print("* = some calls lack this metric. Complete covers input/output accounting.")
+
+
+@app.command("project-context")
+def project_context_command(
+    refresh: Annotated[bool, typer.Option("--refresh")] = False,
+) -> None:
+    """Inspect or refresh the local project navigation cache without a model call."""
+    try:
+        data = asyncio.run(build_project_context(Path.cwd(), refresh=refresh))
+        console.print(json.dumps(data, ensure_ascii=False, indent=2), markup=False)
+    except (ValueError, OSError) as exc:
+        console.print(str(exc), markup=False)
+        raise typer.Exit(1) from None
 
 
 @app.command("test")
