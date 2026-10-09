@@ -14,6 +14,7 @@ from dev_agent.workflow.implementation import _verify_identity, implement
 from dev_agent.workflow.investigation import _write, investigate
 from dev_agent.workflow.persistence import Journal, now
 from dev_agent.workflow.planning import _json, _local_file, approval_is_current, generate_plan
+from dev_agent.workflow.recovery import active_history, prepare_resume, save_checkpoint
 from dev_agent.workflow.review import review
 
 STAGES = ("investigate", "plan", "worktree", "implement", "validate", "review", "fix")
@@ -145,7 +146,8 @@ async def advance(
             return await check_ready(journal, ticket_id)
         if run["state"] == "WAITING_FOR_HUMAN":
             return "WAITING_FOR_HUMAN"
-        history = journal.steps(ticket_id)
+        await prepare_resume(journal, ticket_id)
+        history = active_history(journal, ticket_id)
         completed = {step["name"] for step in history if step["status"] == "COMPLETE"}
         if history and history[-1]["status"] != "COMPLETE":
             previous = history[-1]
@@ -200,6 +202,7 @@ async def advance(
                     assert plan is not None
                     if name == "plan_review":
                         approved = await review_plan_by_agent(plan, registry)
+                        await save_checkpoint(journal, ticket_id)
                         journal.finish(step_id, "COMPLETE", plan / "plan-review.json")
                         if not approved:
                             journal.update(
@@ -249,6 +252,8 @@ async def advance(
                         receipt = _json(plan / "fix-cycle.json")
                         if receipt.get("status") != state:
                             raise ValueError("Missing final completion receipt.")
+                if name in {"investigate", "plan"}:
+                    await save_checkpoint(journal, ticket_id)
                 journal.finish(step_id, "COMPLETE", artifact)
             except BaseException as exc:
                 if journal.get(ticket_id)["current_step"] == "validation_fix":

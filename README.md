@@ -94,6 +94,10 @@ gates:
 
 The workflow prints progress while agents work. If it stops, inspect `status` and
 its referenced artifacts; use `dev-agent resume DEMO-001` when the issue is resolved.
+Before worktree creation, resume checks source and investigation checkpoints: unchanged
+inputs reuse completed stages; stale source/research regenerates the read-only stages.
+A damaged plan alone reuses valid research. Dirty source must be committed or stashed
+first. Previous artifacts and usage remain available. See [resume recovery](docs/resume.md).
 Some interrupted or changed states require manual recovery rather than automatic replay.
 
 ## Review, revise, and merge
