@@ -68,6 +68,11 @@ dev-agent ticket DEMO-001 --description "Add optional done filtering to GET /tas
 # Or: dev-agent ticket DEMO-001 --file /path/to/requirement.md
 ```
 
+To draft multiple tickets, put each description in `~/requirements/TICKET-ID/description.md`
+and run `dev-agent ticket batch --folder ~/requirements`. Folder names become IDs;
+unchanged completed drafts are skipped and existing edits are never overwritten.
+See [batch input layout and recovery](docs/ticket-batches.md).
+
 Review `.dev-agent/tickets/DEMO-001.md`, resolve open questions, and edit the acceptance
 criteria as needed. Generation only creates a draft; implementation starts separately.
 You can also write your own Markdown ticket.

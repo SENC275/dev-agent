@@ -233,9 +233,39 @@ def ticket(
     file: Annotated[
         Path | None, typer.Option("--file", exists=True, dir_okay=False, readable=True)
     ] = None,
+    folder: Annotated[
+        Path | None, typer.Option("--folder", help="Batch input: one subfolder per ticket ID.")
+    ] = None,
 ) -> None:
-    """Draft .dev-agent/tickets/ID.md from a description using the read-only planner."""
+    """Draft one ticket, or use ticket batch --folder DIR for multiple drafts."""
     try:
+        if folder is not None:
+            if ticket_id != "batch" or file is not None or description is not None:
+                raise ValueError("Use ticket batch --folder DIR without --file/--description.")
+            from dev_agent.workflow.ticket_batch import generate_batch
+
+            repository = Path.cwd()
+            config = load_config(repository / CONFIG_NAME)
+            current = ["Preflight"]
+
+            def progress(message: str) -> None:
+                current[0] = message
+                console.print(message, markup=False)
+
+            with activity(console, "Drafting ticket batch…", lambda: current[0]):
+                report = asyncio.run(generate_batch(
+                    repository, folder, ProviderRegistry(config), progress
+                ))
+            for item in report["items"]:
+                console.print(
+                    f"{item['ticket_id']}: {item['status']} "
+                    + item.get("error", item.get("output", "")), markup=False
+                )
+            console.print(f"Batch report: {report['report_path']}", markup=False)
+            console.print("Drafts only. Review scope/dependencies before starting each ticket.")
+            if any(item["status"] not in {"GENERATED", "SKIPPED"} for item in report["items"]):
+                raise typer.Exit(1)
+            return
         if description is not None and file is not None:
             raise ValueError("Use either --description or --file, not both.")
         if file is not None:
