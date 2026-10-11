@@ -41,6 +41,38 @@ app = typer.Typer(
     help="Local engineering workflow CLI. Plan, implement, validate, review, and resume.",
 )
 console = Console(highlight=False)
+corpus_app = typer.Typer(
+    no_args_is_help=True, help="Collect and inspect local training candidates."
+)
+app.add_typer(corpus_app, name="corpus")
+
+
+@corpus_app.command("collect")
+def corpus_collect(ticket_id: str) -> None:
+    """Save a reconstructed local candidate; no model call or training."""
+    from dev_agent.corpus import collect
+
+    try:
+        path = asyncio.run(collect(Journal(Path.cwd()), ticket_id))
+        console.print(f"Candidate saved: {path}\nInspect: dev-agent corpus inspect {ticket_id}",
+                      markup=False)
+    except (ValueError, OSError, sqlite3.Error) as exc:
+        console.print(str(exc), markup=False)
+        raise typer.Exit(1) from None
+
+
+@corpus_app.command("inspect")
+def corpus_inspect(ticket_id: str) -> None:
+    """Verify the latest saved sample and replay its patch in a temporary directory."""
+    from dev_agent.corpus import inspect
+
+    try:
+        result = inspect(Journal(Path.cwd()), ticket_id)
+        typer.echo(json.dumps(result, ensure_ascii=False, indent=2))
+    except (ValueError, OSError, KeyError, TypeError, sqlite3.Error) as exc:
+        console.print(str(exc), markup=False)
+        raise typer.Exit(1) from None
+
 
 
 @app.command()

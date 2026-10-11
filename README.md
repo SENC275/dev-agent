@@ -175,6 +175,13 @@ durations. Use `--json` to export measurements for comparisons. Records stay loc
 missing metrics are unknown, and older runs cannot be reconstructed. Cache tokens are
 already included in input totals. See [accounting and comparison guidance](docs/usage.md).
 
+## Collect local corpus candidates
+
+Run `dev-agent corpus collect TICKET-ID`, then `dev-agent corpus inspect TICKET-ID`.
+This saves local evidence and verifies that the saved patch reconstructs changed files.
+No model calls, uploads or training; incomplete evidence stays explicitly marked.
+See [corpus collection and limitations](docs/corpus.md).
+
 ## More
 
 - [CRUD demo](examples/crud-app/README.md)
