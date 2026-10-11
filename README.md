@@ -1,199 +1,251 @@
 # dev-agent
 
-A local CLI that turns tickets into investigated, implemented, tested, and reviewed
-code changes. Use Codex, Claude Code, or Ollama, with a different provider for each role.
+Turn a ticket into a reviewed code change, from your terminal.
+
+**dev-agent coordinates Codex, Claude Code and Ollama** through a repeatable workflow.
+Assign different providers to research, planning, implementation and review; inspect
+what happened and decide when to merge.
 
 ```text
-Ticket → Investigate → Plan → Approve → Implement → Validate → Review → Human review
+Describe → Draft ticket → Investigate → Plan → Approve → Implement → Test → Review
+                                                            ↑               │
+                                                            └── Fix/retest ─┘
+                                                    Human review → Merge
 ```
 
-Changes run in an isolated Git worktree. You inspect the result, request revisions,
-and decide when to merge. Failed checks can trigger bounded repair attempts.
+Implementation happens in an isolated Git worktree. Configuration, tickets and run
+records stay local by default. Generating a ticket does not start implementation;
+merging does not push or deploy.
 
 ## Install
 
-Requires macOS/Linux, Python 3.12+, Git, and at least one configured provider.
-Install and authenticate Codex or Claude Code separately, or configure an Ollama server.
+You need macOS/Linux, Python 3.12+, Git, and `uv` or `pipx`. Install and authenticate
+the provider CLIs you intend to use, or make an Ollama server available.
 
 ```bash
 git clone https://github.com/SENC275/dev-agent.git
 cd dev-agent
 uv tool install .
-# Alternatively: pipx install .
+# Alternative: pipx install .
 ```
 
-## Configure your project
+## Your first ticket
 
-Run inside the Git repository you want agents to work on:
+Run the following commands from the **project you want to change**, not the dev-agent
+source repository. The example requirement assumes a Python task API with `GET /tasks`;
+replace it with a small, testable change relevant to your own project.
+
+### 1. Configure providers and checks
 
 ```bash
 cd /path/to/your-project
 dev-agent init
-# Edit .dev-agent.yaml for your providers and validation commands.
-dev-agent doctor
 ```
 
-All roles default to Codex. Set `commands.test`, `commands.lint`, and
-`commands.typecheck` to checks that actually work in your project.
-`doctor` checks local prerequisites; it does not verify model authentication.
-
-Root `AGENTS.md` and `CLAUDE.md` provide project instructions. Use them to point
-agents to relevant conventions and existing documentation.
-
-For provider configuration, see the [default config](.dev-agent.example.yaml),
-[Claude/mixed example](examples/claude.yaml), and [Ollama example](examples/ollama.yaml).
-Adapt model names, server addresses, and role assignments to your environment.
-
-## Run tests manually
-
-```bash
-dev-agent test
-# From a worktree without a local YAML, use the original project's configuration:
-dev-agent test --config /path/to/your-project/.dev-agent.yaml
-```
-
-Runs only `commands.test` in the current directory, without AI, a ticket, or a clean
-Git baseline. Uses `validation.timeout_seconds`; prints a heartbeat while waiting and
-stdout/stderr after completion. Returns the command's exit code (124 on timeout).
-Commands use the same argument parsing as workflow validation: use explicit
-`sh -c 'first && second'` for shell operators. This manual check does not change ticket
-status or replace the workflow's recorded validation and review.
-
-## Create and run a ticket
-
-Generate a draft from a description using your configured planner:
-
-```bash
-dev-agent ticket DEMO-001 --description "Add optional done filtering to GET /tasks, filter before pagination, and add regression tests."
-# Or: dev-agent ticket DEMO-001 --file /path/to/requirement.md
-```
-
-To draft multiple tickets, put each description in `~/requirements/TICKET-ID/description.md`
-and run `dev-agent ticket batch --folder ~/requirements`. Folder names become IDs;
-unchanged completed drafts are skipped and existing edits are never overwritten.
-See [batch input layout and recovery](docs/ticket-batches.md).
-
-Review `.dev-agent/tickets/DEMO-001.md`, resolve open questions, and edit the acceptance
-criteria as needed. Generation only creates a draft; implementation starts separately.
-You can also write your own Markdown ticket.
-
-Before starting, commit intended project changes and ensure `git status --short`
-is empty. This gives the worktree a reproducible baseline. `init` excludes `.dev-agent.yaml` and `.dev-agent/` through Git’s local
-`info/exclude`, without changing `.gitignore`. Tickets, configuration, and run records
-do not need commits. Keep configuration unchanged during a run. Existing tracked files
-remain tracked; exclusions do not remove them from Git history.
-
-```bash
-dev-agent start DEMO-001 --file .dev-agent/tickets/DEMO-001.md
-dev-agent status DEMO-001
-```
-
-By default, you approve the plan before implementation. To use an independent
-agent for early plan approval, set this in `.dev-agent.yaml` before starting:
+Edit `.dev-agent.yaml`. This example uses Codex for research, planning and review,
+and Claude for implementation and fixes:
 
 ```yaml
+providers:
+  codex:
+    type: codex_cli
+    timeout_seconds: 900
+  claude:
+    type: claude_cli
+    timeout_seconds: 900
+
+roles:
+  explorer: {provider: codex}
+  pattern_researcher: {provider: codex}
+  test_researcher: {provider: codex}
+  planner: {provider: codex}
+  implementer: {provider: claude}
+  reviewer: {provider: codex}
+  fixer: {provider: claude}
+
+commands:
+  test: python3 -m pytest
+  lint: "true"
+  typecheck: "true"
+
 gates:
   plan_review: agent
   approve_final: true
 ```
 
-The workflow prints progress while agents work. If it stops, inspect `status` and
-its referenced artifacts; use `dev-agent resume DEMO-001` when the issue is resolved.
-Before worktree creation, resume checks source and investigation checkpoints: unchanged
-inputs reuse completed stages; stale source/research regenerates the read-only stages.
-A damaged plan alone reuses valid research. Dirty source must be committed or stashed
-first. Previous artifacts and usage remain available. See [resume recovery](docs/resume.md).
-Some interrupted or changed states require manual recovery rather than automatic replay.
+This example requires both CLIs on `PATH`. To use only Claude, set all seven role
+providers to `claude`. Providers use their CLI's default model unless you add
+`model:`; choose one available to your account. See the [Ollama example](examples/ollama.yaml)
+for a local implementer.
 
-## Review, revise, and merge
-
-When ready for human review, inspect the `worktree_path` reported by `status`:
+Use checks that work in your project's environment. All three command values must
+be nonempty strings: **use `"true"`, not `null`, to skip an unused check**. Shell
+operators require an explicit shell, e.g. `sh -c 'command1 && command2'`.
 
 ```bash
-git -C /path/to/worktree status --short
-git -C /path/to/worktree diff
+dev-agent doctor
+dev-agent test
 ```
 
-Inspect newly added files too: ordinary `git diff` does not display untracked files.
-Run revisions and merges from the original project root:
+`doctor` checks prerequisites, not account authentication or model access. `test`
+runs only `commands.test` in the current directory, without a model call or ticket.
+Point root `AGENTS.md` or `CLAUDE.md` to the conventions and documentation agents
+should read.
+
+### 2. Generate and review a draft
 
 ```bash
-dev-agent revise DEMO-001
-# Or: dev-agent revise DEMO-001 --file /path/to/feedback.md
+dev-agent ticket TASK-001 --description \
+  "Add optional done filtering to GET /tasks. Filter before pagination, preserve existing behavior when omitted, and add regression tests."
 
-dev-agent merge DEMO-001 --dry-run
-dev-agent merge DEMO-001
+cat .dev-agent/tickets/TASK-001.md
 ```
 
-`revise` accepts feedback and runs another implementation and verification cycle.
-`merge` asks for confirmation, commits the reviewed changes, and fast-forwards the
-source branch. It requires current passing checks and an unchanged source baseline;
-it does not push, deploy, or apply database migrations.
+Edit the draft's acceptance criteria and resolve open questions before starting.
+You can also supply an external description with `--file ~/requirements/task.md`,
+or write your own ticket Markdown without using a model to draft it.
 
-## Reusable knowledge
+### 3. Start implementation
 
-Knowledge documents are disabled by default so tool-generated documents do not enter
-code commits. Investigation records remain local in `.dev-agent/`. To explicitly opt
-in to reviewing and committing knowledge documents, configure this before a new ticket:
+Commit intended **project code** changes first and ensure `git status --short` is
+empty. An existing commit is required as the worktree baseline.
+
+```bash
+dev-agent start TASK-001 --file .dev-agent/tickets/TASK-001.md
+```
+
+The example config uses an independent agent to approve the plan. The default from
+`init` is human approval: inspect/edit the plan in the terminal approval flow before
+implementation begins. Progress and elapsed time remain visible during agent work.
+
+**Keep `.dev-agent.yaml` unchanged for this ticket.** Its configuration is frozen
+at start. Tickets, YAML and run records do not need commits: `init` excludes
+`.dev-agent.yaml` and `.dev-agent/` through Git's local `info/exclude`. Files already
+tracked by Git remain tracked.
+
+### 4. Inspect, revise and merge
+
+```bash
+dev-agent summary TASK-001
+dev-agent status TASK-001
+```
+
+`summary` shows validation results, review findings, changed files and token usage.
+`status` provides the `worktree_path` and artifact locations. Inspect that worktree:
+
+```bash
+git -C /path/from/worktree_path status --short
+git -C /path/from/worktree_path diff HEAD
+```
+
+Open new untracked files too; ordinary Git diffs omit them. If you want changes,
+run from the original project root:
+
+```bash
+dev-agent revise TASK-001
+# Or: dev-agent revise TASK-001 --file ~/requirements/feedback.md
+```
+
+When satisfied:
+
+```bash
+dev-agent merge TASK-001 --dry-run
+dev-agent merge TASK-001
+```
+
+Merge asks for confirmation, commits the reviewed changes and fast-forwards your
+source branch. It requires current passing checks and an unchanged source baseline.
+You still control the final push, deployment and database migrations.
+
+## Generate a batch of tickets
+
+Put each requirement in its own folder. **The subfolder name becomes the ticket ID.**
+
+```text
+~/requirements/
+├── TF-003/
+│   └── description.md
+└── TF-004/
+    ├── description.md
+    └── constraints.md
+```
+
+From the target repository:
+
+```bash
+dev-agent ticket batch --folder ~/requirements
+```
+
+Drafts appear in `.dev-agent/tickets/TF-003.md` and `TF-004.md`. Review scope overlap
+and dependencies before starting them individually. Repeating the command skips
+unchanged successes and retries failures; changed inputs or existing edits produce
+conflicts instead of being overwritten. [Input rules and recovery →](docs/ticket-batches.md)
+
+## Example: Terraform checks
+
+For a Terraform project with native mock tests and environment tfvars, use a script
+that initializes providers, checks formatting, validates and tests every environment:
+
+```sh
+# scripts/test.sh — commit this script as part of your project baseline.
+#!/bin/sh
+set -eu
+cd "$(dirname "$0")/.."
+terraform init -backend=false -input=false
+terraform fmt -check -recursive
+terraform validate
+for environment in dev staging prod; do
+  terraform test -var-file="environments/$environment.tfvars"
+done
+```
+
+Replace the `commands` section in your YAML:
 
 ```yaml
-knowledge:
-  enabled: true
+commands:
+  test: sh scripts/test.sh
+  lint: "true"
+  typecheck: "true"
 ```
 
-The implementer drafts `docs/knowledge/<ticket>.md` from investigation and final code.
-Candidates include scope, source references, the base commit, and recheck conditions.
-The independent reviewer checks them alongside code; `revise` can correct or reject
-them. Final merge accepts both together, without another early approval gate.
-See [knowledge workflow](docs/knowledge-workflow.md) for details.
+This assumes `tests/*.tftest.hcl` uses mock providers and `command = plan`; it is not
+a guarantee that arbitrary Terraform tests avoid real infrastructure. Provider
+installation may need network access. Adapt the environment list to your project.
 
-## Reuse ticket context
+Example requirement: “Disable retired EC2 pools in dev, staging and prod by setting
+their counts to zero. Preserve resource definitions, live Fargate routing and RDS
+settings. Add regression tests using the actual environment tfvars.”
 
-Related file indexes and investigation evidence are reused within each ticket by default.
-Later roles receive at most 4000 extra characters, with changed source files flagged.
-Old/mismatched caches fall back to normal research; reviewers still verify current code.
-Opt into Explorer-first investigation with `context.investigation_mode: explorer_first`;
-`single_pass` uses one investigator to produce all three reports. Both are opt-in;
-`parallel` remains the default.
-No extra model calls or Git-tracked knowledge files are created. See
-[context reuse and configuration](docs/context-reuse.md).
+## When a run stops
 
-## Review a completed ticket
+Start with `dev-agent summary TASK-001` and `dev-agent status TASK-001`. Check the
+referenced `validation.json`, `review.json` or provider diagnostic before retrying.
 
-Run `dev-agent summary TICKET-ID` for changed files, validation results, review findings,
-token totals and diff/revise/merge commands. `--json` exports the same overview.
-Old checks are marked stale when the current code or approval no longer matches.
-This command makes no model calls and does not run tests or merge anything.
-See [review summary](docs/review-summary.md).
+| Situation | Next step |
+| --- | --- |
+| Provider or validation failed | Fix the cause, then `dev-agent resume TASK-001`. |
+| Fix cycle limit reached | Inspect remaining findings; grant one more attempt with `dev-agent resume TASK-001 --additional-fix-cycles 1`. |
+| Configuration changed since start | Restore the original YAML, or start a new ID with the same ticket file and the new configuration. |
+| Checks pass but review has findings | Read `summary` / `review.json`; passing tests alone do not complete review. |
+| Ready for human review | Inspect the worktree, then revise or merge. |
 
-## Reuse project navigation across tickets
+Resume preserves history and checks saved evidence. It does not reset fix budgets or
+blindly replay interrupted writes. A manual `dev-agent test` does not update the
+workflow's recorded validation. [Recovery details →](docs/resume.md)
 
-Opt in with `project_context.enabled: true` to share a local index of directories,
-convention documents and test/configuration entry points. Git and document changes
-refresh it before use. Inspect it with `dev-agent project-context` (`--refresh` rebuilds).
-No additional model calls or committed files. See [project context](docs/project-context.md).
+## Optional capabilities
 
-## Measure model usage
+| Capability | Command or setting | Details |
+| --- | --- | --- |
+| Token and cache accounting | `dev-agent usage TASK-001` | [Usage](docs/usage.md); missing metrics remain unknown. |
+| Ticket context reuse | Enabled by default; `context.investigation_mode: single_pass` is opt-in | [Context reuse](docs/context-reuse.md); default investigation stays `parallel`. |
+| Cross-ticket project index | `project_context.enabled: true` | [Project context](docs/project-context.md) |
+| Reviewable knowledge documents | `knowledge.enabled: true` | [Knowledge](docs/knowledge-workflow.md); opt-in documents enter code commits. |
+| Local corpus candidates | `dev-agent corpus collect TASK-001`, then `dev-agent corpus inspect TASK-001` | [Corpus](docs/corpus.md); no automatic training or upload. |
 
-Run `dev-agent usage TICKET-ID` for per-stage/role token counts, cache usage, calls and
-durations. Use `--json` to export measurements for comparisons. Records stay local;
-missing metrics are unknown, and older runs cannot be reconstructed. Cache tokens are
-already included in input totals. See [accounting and comparison guidance](docs/usage.md).
+## Development
 
-## Collect local corpus candidates
-
-Run `dev-agent corpus collect TICKET-ID`, then `dev-agent corpus inspect TICKET-ID`.
-This saves local evidence and verifies that the saved patch reconstructs changed files.
-No model calls, uploads or training; incomplete evidence stays explicitly marked.
-See [corpus collection and limitations](docs/corpus.md).
-
-## More
-
-- [CRUD demo](examples/crud-app/README.md)
-- [Detailed design and milestone history](docs/design-and-history.md)
-- `dev-agent --help` or `dev-agent <command> --help`
-
-For development:
+From the dev-agent source repository:
 
 ```bash
 uv sync
@@ -202,26 +254,6 @@ uv run ruff check .
 uv run mypy dev_agent
 ```
 
-### Continue a paused ticket
-
-From the source repository, run `dev-agent resume DEMO-001`. A completed, paused
-fix cycle is revalidated and reviewed against the current worktree, including manual
-repairs. Existing implementation and fix history are preserved.
-
-If the fix budget is exhausted, explicitly grant more attempts:
-
-```sh
-dev-agent resume DEMO-001 --additional-fix-cycles 2
-```
-
-The extra budget is recorded with the ticket; the frozen YAML configuration stays
-unchanged. Plain `resume` never replenishes it. Interrupted or uncertain writes still
-require inspection and are not replayed automatically.
-
-Agent plan review corrects an invalid structured response once. An actual rejection
-returns feedback to the read-only planner, then independently reviews the revised
-plan. `limits.max_plan_revisions` defaults to 2 (0 disables automatic plan changes).
-The budget persists across resume; exhausted plans require human review. Responses
-and plan versions stay in `.dev-agent/`. Progress shows `correct_output` or
-`revise_plan`; failures distinguish `model_output`, `provider_execution`, and
-`plan_rejected`. No invalid response or rejected plan grants implementation approval.
+See the [full configuration example](.dev-agent.example.yaml),
+[review summary guide](docs/review-summary.md) and [design history](docs/design-and-history.md).
+Use `dev-agent --help` or `dev-agent <command> --help` for command options.
