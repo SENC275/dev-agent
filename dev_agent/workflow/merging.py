@@ -37,6 +37,13 @@ async def preview_merge(journal: Journal, ticket_id: str) -> MergePreview:
     directory = Path(run["plan_path"])
     if run["state"] in {"MERGING", "MERGE_FAILED", "MERGED"}:
         raise ValueError("Merge already attempted; inspect merge.json and Git before continuing.")
+    worktree_path = _local_file(directory, "worktree.json")
+    if worktree_path.exists():
+        previous = _json(worktree_path)
+        if await git(journal.repository, "rev-parse", "HEAD") != previous.get("base_commit"):
+            raise ValueError(
+                f"Source HEAD advanced; run dev-agent sync {ticket_id} before merging."
+            )
     if not await approval_is_current(directory):
         raise ValueError("Plan approval is missing or stale.")
     feedback_history(directory)

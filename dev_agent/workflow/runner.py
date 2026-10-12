@@ -29,6 +29,7 @@ async def repair_validation(
     registry: ProviderRegistry,
     *,
     revalidate: bool = False,
+    check_completion: bool = True,
 ) -> str:
     step = journal.begin(ticket_id, "validation_fix")
     try:
@@ -48,7 +49,7 @@ async def repair_validation(
             if state == "READY_FOR_HUMAN_REVIEW"
             else str(_json(plan / "fix-cycle.json").get("reason", "Repair requires inspection.")),
         )
-        if state == "READY_FOR_HUMAN_REVIEW":
+        if state == "READY_FOR_HUMAN_REVIEW" and check_completion:
             return await check_ready(journal, ticket_id)
         return state
     except BaseException as exc:
@@ -66,6 +67,13 @@ async def advance(
     *,
     additional_fix_cycles: int = 0,
 ) -> str:
+    pending = journal.get(ticket_id)
+    if (pending["current_step"] or "").startswith("sync"):
+        if additional_fix_cycles:
+            raise ValueError("Extra cycles require a completed, paused fix cycle.")
+        from dev_agent.workflow.synchronization import synchronize
+
+        return await synchronize(journal, ticket_id, config, registry)
     with journal.lock(ticket_id):
         run = journal.get(ticket_id)
         if ProjectConfig.model_validate_json(run["config"] or "{}") != config:

@@ -487,7 +487,25 @@ def resume(
     _managed(ticket_id, additional_fix_cycles=additional_fix_cycles)
 
 
-def _managed(ticket_id: str, file: Path | None = None, *, additional_fix_cycles: int = 0) -> None:
+@app.command()
+def sync(
+    ticket_id: str,
+    continue_sync: Annotated[
+        bool, typer.Option("--continue", help="Validate manually resolved conflicts.")
+    ] = False,
+) -> None:
+    """Integrate a completed ticket onto current source HEAD and revalidate/review."""
+    _managed(ticket_id, sync_baseline=True, continue_sync=continue_sync)
+
+
+def _managed(
+    ticket_id: str,
+    file: Path | None = None,
+    *,
+    additional_fix_cycles: int = 0,
+    sync_baseline: bool = False,
+    continue_sync: bool = False,
+) -> None:
     try:
         repository = Path.cwd().resolve()
         config = load_config(repository / CONFIG_NAME)
@@ -501,16 +519,27 @@ def _managed(ticket_id: str, file: Path | None = None, *, additional_fix_cycles:
                     "Inspect git status --short; commit changes and ignore generated files."
                 )
             journal.create(ticket_id, file.read_text(encoding="utf-8"), config.model_dump_json())
-        with activity(console, "Workflow running…", lambda: _stage(journal, ticket_id)):
-            state = asyncio.run(
-                advance(
-                    journal,
-                    ticket_id,
-                    config,
-                    ProviderRegistry(config),
-                    additional_fix_cycles=additional_fix_cycles,
+        if sync_baseline:
+            from dev_agent.workflow.synchronization import synchronize
+
+            with activity(console, "Updating ticket baseline…", lambda: _stage(journal, ticket_id)):
+                state = asyncio.run(
+                    synchronize(
+                        journal, ticket_id, config, ProviderRegistry(config),
+                        continue_sync=continue_sync,
+                    )
                 )
-            )
+        else:
+            with activity(console, "Workflow running…", lambda: _stage(journal, ticket_id)):
+                state = asyncio.run(
+                    advance(
+                        journal,
+                        ticket_id,
+                        config,
+                        ProviderRegistry(config),
+                        additional_fix_cycles=additional_fix_cycles,
+                    )
+                )
         if state == "AWAITING_PLAN_APPROVAL":
             plan_path = journal.get(ticket_id)["plan_path"]
             assert plan_path is not None

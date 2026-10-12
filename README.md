@@ -157,6 +157,24 @@ Merge asks for confirmation, commits the reviewed changes and fast-forwards your
 source branch. It requires current passing checks and an unchanged source baseline.
 You still control the final push, deployment and database migrations.
 
+## Parallel tickets and an updated main branch
+
+Different tickets can run in separate terminals/worktrees. If `TASK-001` merges
+first, update `TASK-002` before accepting it:
+
+```bash
+dev-agent sync TASK-002
+dev-agent summary TASK-002
+dev-agent merge TASK-002 --dry-run
+dev-agent merge TASK-002
+```
+
+Sync preserves the old worktree, creates a new integration worktree on current source
+HEAD, and repeats planning approval, validation and independent review. Conflicts get
+one fixer attempt; unresolved conflicts pause for manual edits and `sync TASK-002 --continue`.
+Requires Git 2.38+. There is no automatic multi-ticket scheduler/merge queue yet.
+See [parallel integration and recovery](docs/synchronization.md).
+
 ## Generate a batch of tickets
 
 Put each requirement in its own folder. **The subfolder name becomes the ticket ID.**
