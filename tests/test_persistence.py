@@ -118,3 +118,35 @@ def test_cli_noninteractive_start_status_resume(repository: Path, tmp_path: Path
         assert "AWAITING_PLAN_APPROVAL" in status.output
         assert "Change app" not in status.output
         assert runner.invoke(app, ["status", "missing"]).exit_code == 1
+
+
+def test_requested_plan_revision_survives_resume_until_human_approval(repository: Path) -> None:
+    import io
+
+    from rich.console import Console
+
+    from dev_agent.workflow.plan_gate import review_plan
+
+    journal, config, provider, registry = setup(repository)
+    from test_worktree import git
+
+    (repository / ".dev-agent.yaml").write_text(config.model_dump_json())
+    git(repository, "add", ".dev-agent.yaml")
+    git(repository, "-c", "user.name=Test", "-c", "user.email=test@example.invalid",
+        "commit", "-m", "test configuration")
+    assert asyncio.run(advance(journal, "DEMO-12", config, registry)) == "AWAITING_PLAN_APPROVAL"
+    plan = Path(journal.get("DEMO-12")["plan_path"] or "")
+    with (
+        patch("dev_agent.workflow.plan_gate.sys.stdin.isatty", return_value=True),
+        patch("dev_agent.workflow.plan_gate.typer.prompt", side_effect=["R", "Add tests", "Q"]),
+    ):
+        assert not review_plan(plan, Console(file=io.StringIO()), registry)
+    assert len(provider.tasks) == 5  # Only one extra planner, no repeated investigators.
+    assert journal.get("DEMO-12")["worktree_path"] is None
+    assert asyncio.run(advance(Journal(repository), "DEMO-12", config, registry)) == (
+        "AWAITING_PLAN_APPROVAL"
+    )
+    assert len(provider.tasks) == 5
+    asyncio.run(approve_plan(plan, (plan / "plan.md").read_text()))
+    assert asyncio.run(advance(journal, "DEMO-12", config, registry)) == "READY_FOR_HUMAN_REVIEW"
+    assert len(provider.tasks) == 7

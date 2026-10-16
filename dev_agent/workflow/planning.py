@@ -180,6 +180,10 @@ async def approve_plan(
     if actor == "human" and (directory / "plan-review.lock").exists():
         raise ValueError("Plan reviewer is running; wait before approving.")
     current = await checked_plan(directory)
+    if actor == "human" and (directory / "plan-review.lock").exists():
+        raise ValueError("Plan reviewer is running; wait before approving.")
+    if actor == "agent" and (directory / "human-plan-review.json").exists():
+        raise ValueError("Human-requested plan revision requires explicit human approval.")
     if current != displayed_text:
         raise ValueError("Plan changed after display; review it again before approving.")
     metadata = _json(_local_file(directory, "planning.json"))
@@ -237,6 +241,8 @@ async def approval_is_current(directory: Path) -> bool:
 
 
 async def edit_plan(directory: Path, text: str, displayed_text: str) -> None:
+    if (directory / "plan-review.lock").exists():
+        raise ValueError("Plan reviewer is running; wait before editing.")
     if await checked_plan(directory) != displayed_text:
         raise ValueError("Plan changed during editing; review the current version first.")
     validate_plan(text)

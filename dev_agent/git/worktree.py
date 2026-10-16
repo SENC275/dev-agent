@@ -136,6 +136,8 @@ async def create_approved_worktree(directory: Path, config: GitConfig) -> Worktr
     )
 
     directory = directory.resolve(strict=True)
+    if (directory / "plan-review.lock").exists():
+        raise ValueError("Plan review is running; wait before creating a worktree.")
     if not await approval_is_current(directory):
         raise ValueError("A current human plan approval is required.")
     metadata = _json(_local_file(directory, "planning.json"))
@@ -161,6 +163,8 @@ async def create_approved_worktree(directory: Path, config: GitConfig) -> Worktr
     try:
         if record.exists():
             raise ValueError("This plan already has a worktree record.")
+        if (directory / "plan-review.lock").exists():
+            raise ValueError("Plan review is running; wait before creating a worktree.")
         if not await approval_is_current(directory):
             raise ValueError("Plan approval changed before worktree creation.")
         result = await create_worktree(repository, ticket=ticket, base_commit=base, config=config)

@@ -37,6 +37,8 @@ async def review_plan_by_agent(directory: Path, registry: ProviderRegistry) -> b
     try:
         if await approval_is_current(directory):
             return True
+        if (directory / "human-plan-review.json").exists():
+            return False
         plan = await checked_plan(directory)
         metadata = _json(_local_file(directory, "planning.json"))
         repository = investigation_repository(directory.parent.parent)

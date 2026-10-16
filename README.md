@@ -275,3 +275,37 @@ uv run mypy dev_agent
 See the [full configuration example](.dev-agent.example.yaml),
 [review summary guide](docs/review-summary.md) and [design history](docs/design-and-history.md).
 Use `dev-agent --help` or `dev-agent <command> --help` for command options.
+
+### 本地 Dashboard
+
+在项目根目录运行：
+
+```bash
+dev-agent dashboard
+```
+
+自动打开本地页面，查看 ticket 状态、阶段历史、审查结果、变更文件和 token 用量。
+可以运行当前项目配置的 `commands.test`；resume、revise、sync、merge 提供 CLI 命令。
+
+多个项目放在一个页面里管理：
+
+```bash
+dev-agent dashboard --project ~/sen --project ~/terraform-corpus-demo-20261011
+```
+
+服务只监听 `127.0.0.1`。端口占用时加 `--port 8766`；不自动打开浏览器用 `--no-open`。
+运行状态是日志中的最近记录，不代表对应进程仍然存活。详情按需刷新，列表每 3 秒刷新。
+测试在主项目目录执行，不能替代 ticket worktree 的验证。测试输出在完成后显示，运行中显示耗时。
+关闭服务后，已启动的测试会等到完成或配置的超时再退出。Dashboard 的测试记录仅保存在当前服务内存中。
+
+### 让 agent 修改尚未批准的计划
+
+审核菜单支持 `[A] Approve  [E] Edit  [R] Request changes  [Q] Quit`。
+选 **R**，输入修改意见，例如“保留 CloudWatch Logs，补充 shadow 阶段和回滚测试”。
+配置中的 planner 会复用已有调查、修订完整计划；完成后重新展示，只有选 **A** 才批准。
+可多轮 R；空反馈取消本轮；Q 保存退出，之后 `dev-agent resume TICKET_ID` 回到审核。
+
+每轮的旧计划、反馈、模型回复和状态保存在该 plan 的 `human-plan-revisions/`。
+失败或无效回复不替换原计划；旧批准会失效。此操作不消耗自动审查的修订次数。
+人类请求修改后，即使原本配置了 agent plan review，也需要人类明确批准。
+已创建 worktree 的计划请用完成后的 `dev-agent revise`，不能从此入口改写。

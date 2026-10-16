@@ -261,3 +261,146 @@ def test_editor_failure_preserves_original(investigation: Path) -> None:
         assert not review_plan(directory, Console(file=io.StringIO()))
     assert (directory / "plan.md").read_text() == PLAN
     assert not (directory / "approval.json").exists()
+
+
+def test_request_changes_then_quit_and_approve_later(investigation: Path) -> None:
+    directory = generate(investigation)
+    updated = PLAN.replace("Details for Summary.", "Keep CloudWatch logs during migration.")
+    registry, fake = provider(updated)
+    display = io.StringIO()
+    with (
+        patch("dev_agent.workflow.plan_gate.sys.stdin.isatty", return_value=True),
+        patch("dev_agent.workflow.plan_gate.typer.prompt", side_effect=["R", "Keep logs", "Q"]),
+    ):
+        assert not review_plan(directory, Console(file=display), registry)
+    assert "Keep CloudWatch logs" in display.getvalue()
+    assert (directory / "plan.md").read_text() == updated
+    assert not asyncio.run(approval_is_current(directory))
+    assert len(fake.tasks) == 1
+    assert fake.tasks[0].read_only and fake.tasks[0].role == "planner"
+    assert "Keep logs" in fake.tasks[0].prompt
+    history = list((directory / "human-plan-revisions").iterdir())
+    assert len(history) == 1
+    assert (history[0] / "before.md").read_text() == PLAN
+    assert (history[0] / "feedback.md").read_text() == "Keep logs"
+    assert json.loads((history[0] / "status.json").read_text())["status"] == "COMPLETE"
+    with (
+        patch("dev_agent.workflow.plan_gate.sys.stdin.isatty", return_value=True),
+        patch("dev_agent.workflow.plan_gate.typer.prompt", return_value="A"),
+    ):
+        assert review_plan(directory, Console(file=io.StringIO()))
+    assert asyncio.run(approval_is_current(directory))
+
+
+@pytest.mark.parametrize("output,success", [("invalid plan", True), (PLAN, False)])
+def test_failed_plan_request_preserves_plan_and_revokes_approval(
+    investigation: Path, output: str, success: bool
+) -> None:
+    from dev_agent.workflow.plan_revision import request_changes
+
+    directory = generate(investigation)
+    asyncio.run(approve_plan(directory, PLAN))
+    with pytest.raises(ValueError):
+        asyncio.run(request_changes(directory, "Change plan", provider(output, success)[0], PLAN))
+    assert (directory / "plan.md").read_text() == PLAN
+    assert not asyncio.run(approval_is_current(directory))
+    assert not (directory / "plan-review.lock").exists()
+    attempt = next((directory / "human-plan-revisions").iterdir())
+    assert json.loads((attempt / "status.json").read_text())["status"] == "FAILED"
+
+
+@pytest.mark.parametrize("block", ["plan-review.lock", "worktree.lock", "worktree.json"])
+def test_plan_request_blocks_concurrent_work(investigation: Path, block: str) -> None:
+    from dev_agent.workflow.plan_revision import request_changes
+
+    directory = generate(investigation)
+    (directory / block).write_text("{}")
+    registry, fake = provider()
+    with pytest.raises(ValueError):
+        asyncio.run(request_changes(directory, "Change plan", registry, PLAN))
+    assert not fake.tasks
+    assert (directory / block).exists()
+    assert (directory / "plan.md").read_text() == PLAN
+
+
+def test_multiple_plan_requests_keep_feedback(investigation: Path) -> None:
+    from dev_agent.workflow.plan_revision import request_changes
+
+    directory = generate(investigation)
+    first = PLAN.replace("Details for Summary.", "First update")
+    second = first.replace("First update", "Second update")
+    asyncio.run(request_changes(directory, "Preserve logs", provider(first)[0], PLAN))
+    registry, fake = provider(second)
+    asyncio.run(request_changes(directory, "Add rollback", registry, first))
+    assert "Preserve logs" in fake.tasks[0].prompt
+    assert "Add rollback" in fake.tasks[0].prompt
+    assert len(list((directory / "human-plan-revisions").iterdir())) == 2
+    assert not asyncio.run(approval_is_current(directory))
+
+
+def test_plan_request_detects_repository_mutation(investigation: Path) -> None:
+    from dev_agent.workflow.plan_revision import request_changes
+
+    directory = generate(investigation)
+    registry, fake = provider()
+    execute = fake.execute
+
+    async def mutate(task):
+        (task.working_directory / "unexpected.txt").write_text("changed")
+        return await execute(task)
+
+    with (
+        patch.object(fake, "execute", side_effect=mutate),
+        pytest.raises(ValueError, match="changed"),
+    ):
+        asyncio.run(request_changes(directory, "Change plan", registry, PLAN))
+    assert (directory / "plan.md").read_text() == PLAN
+    assert not asyncio.run(approval_is_current(directory))
+
+
+def test_plan_request_rejects_changed_frozen_config(investigation: Path) -> None:
+    from dev_agent.workflow.persistence import Journal
+    from dev_agent.workflow.plan_revision import request_changes
+
+    directory = generate(investigation)
+    journal = Journal(investigation.parents[3])
+    config = ProjectConfig()
+    journal.create("DEMO", "Ticket", config.model_dump_json())
+    journal.update("DEMO", plan_path=str(directory))
+    changed = config.model_copy(update={"knowledge": config.knowledge.model_copy(
+        update={"enabled": True}
+    )})
+    registry, fake = provider()
+    registry.config = changed
+    with pytest.raises(ValueError, match="Configuration changed"):
+        asyncio.run(request_changes(directory, "Change plan", registry, PLAN))
+    assert not fake.tasks
+
+
+def test_human_request_cannot_be_auto_approved(investigation: Path) -> None:
+    from dev_agent.models.config import GatesConfig
+    from dev_agent.workflow.agent_plan_gate import review_plan_by_agent
+    from dev_agent.workflow.plan_revision import request_changes
+
+    directory = generate(investigation)
+    registry, fake = provider()
+    asyncio.run(request_changes(directory, "Change plan", registry, PLAN))
+    registry.config = registry.config.model_copy(update={"gates": GatesConfig(plan_review="agent")})
+    assert not asyncio.run(review_plan_by_agent(directory, registry))
+    assert len(fake.tasks) == 1
+    with pytest.raises(ValueError, match="explicit human approval"):
+        asyncio.run(approve_plan(directory, PLAN, actor="agent", review_sha256="fake"))
+    asyncio.run(approve_plan(directory, PLAN))
+    assert asyncio.run(review_plan_by_agent(directory, registry))
+
+
+def test_empty_plan_feedback_cancels_without_call(investigation: Path) -> None:
+    directory = generate(investigation)
+    registry, fake = provider()
+    with (
+        patch("dev_agent.workflow.plan_gate.sys.stdin.isatty", return_value=True),
+        patch("dev_agent.workflow.plan_gate.typer.prompt", side_effect=["R", "", "Q"]),
+    ):
+        assert not review_plan(directory, Console(file=io.StringIO()), registry)
+    assert not fake.tasks
+    assert not (directory / "human-plan-revisions").exists()

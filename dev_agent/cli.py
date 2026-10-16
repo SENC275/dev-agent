@@ -76,6 +76,24 @@ def corpus_inspect(ticket_id: str) -> None:
 
 
 @app.command()
+def dashboard(
+    project: Annotated[list[Path] | None, typer.Option(
+        "--project", exists=True, file_okay=False, help="Repeat for multiple repositories."
+    )] = None,
+    port: Annotated[int, typer.Option(min=0, max=65535)] = 8765,
+    open_browser: Annotated[bool, typer.Option("--open/--no-open")] = True,
+) -> None:
+    """Open a local dashboard for tickets, review results, usage, and configured tests."""
+    from dev_agent.dashboard import serve
+
+    try:
+        serve(project or [Path.cwd()], port, open_browser)
+    except (OSError, ValueError) as exc:
+        console.print(f"Dashboard could not start: {exc}", markup=False)
+        raise typer.Exit(1) from None
+
+
+@app.command()
 def init() -> None:
     """Create .dev-agent.yaml with Codex defaults; never overwrite existing files."""
     try:
@@ -362,7 +380,7 @@ def plan(run: Path) -> None:
 
 @app.command("review-plan")
 def review_plan_command(directory: Path) -> None:
-    """Review a saved plan: approve, edit with VISUAL/EDITOR, or quit."""
+    """Review a saved plan: approve, edit, request planner changes, or quit."""
     try:
         approved = run_plan_gate(directory, console)
     except (ValueError, OSError) as exc:
@@ -544,7 +562,9 @@ def _managed(
             plan_path = journal.get(ticket_id)["plan_path"]
             assert plan_path is not None
             console.print(f"Plan: {plan_path}", markup=False)
-            if config.gates.plan_review == "agent":
+            if (Path(plan_path) / "human-plan-review.json").exists():
+                console.print("Human-requested plan changes await your explicit approval.")
+            elif config.gates.plan_review == "agent":
                 console.print(
                     f"[plan_rejected] Automatic plan revisions exhausted. "
                     f"Review: {Path(plan_path) / 'plan-review.json'}",
