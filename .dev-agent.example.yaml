@@ -42,3 +42,12 @@ context:
 project_context:
   enabled: false
   max_characters: 3000
+
+# Current source/document retrieval; enabled only for new runs using this config.
+rag:
+  enabled: false
+  top_k: 6
+  max_characters: 8000
+  # Optional Ollama embedding model; omit for local lexical retrieval.
+  # embedding_url: http://127.0.0.1:11434
+  # embedding_model: your-installed-embedding-model

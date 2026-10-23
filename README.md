@@ -285,7 +285,8 @@ dev-agent dashboard
 ```
 
 自动打开本地页面，查看 ticket 状态、阶段历史、审查结果、变更文件和 token 用量。
-可以运行当前项目配置的 `commands.test`；resume、revise、sync、merge 提供 CLI 命令。
+可以在页面中生成和编辑 ticket、启动工作流、审核或修改计划、resume、revise、sync 和预览合并。
+耗时操作显示活动状态和耗时，结果保存在本地。参见 [Dashboard 完整流程](docs/dashboard.md)。
 
 多个项目放在一个页面里管理：
 
@@ -296,7 +297,27 @@ dev-agent dashboard --project ~/sen --project ~/terraform-corpus-demo-20261011
 服务只监听 `127.0.0.1`。端口占用时加 `--port 8766`；不自动打开浏览器用 `--no-open`。
 运行状态是日志中的最近记录，不代表对应进程仍然存活。详情按需刷新，列表每 3 秒刷新。
 测试在主项目目录执行，不能替代 ticket worktree 的验证。测试输出在完成后显示，运行中显示耗时。
-关闭服务后，已启动的测试会等到完成或配置的超时再退出。Dashboard 的测试记录仅保存在当前服务内存中。
+关闭服务时会等待活动作业完成。工作流作业有本地历史；测试按钮的输出仍只保存在服务内存中。
+
+### 项目知识检索 / RAG
+
+在新 ticket 启动前，把以下配置加入 `.dev-agent.yaml`：
+
+```yaml
+rag:
+  enabled: true
+```
+
+各角色调用前会检索当前代码和文档，注入带文件路径、行号和内容哈希的片段。
+修改和删除会在下次检索时更新，不同 worktree 的源码隔离。
+默认本地全文检索；可选 Ollama embedding 混合检索。
+
+```bash
+dev-agent rag index
+dev-agent rag search "CloudWatch alarm missing data"
+```
+
+参见 [RAG 配置、更新机制和限制](docs/rag.md)。旧 ticket 保留冻结配置；此功能默认关闭。
 
 ### 让 agent 修改尚未批准的计划
 

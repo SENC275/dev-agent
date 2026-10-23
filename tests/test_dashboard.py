@@ -92,6 +92,13 @@ def test_http_auth_origin_and_no_arbitrary_commands(tmp_path: Path) -> None:
             assert request('/api/test', dict(auth, Origin=url), b'{"project":"0"}') == 202
             test.assert_called_once_with('0')
         assert request('/api/exec', dict(auth, Origin=url), b'{}') == 404
+        assert request(
+            '/api/action', auth, b'{"project":"0","action":"resume","ticket":"T"}'
+        ) == 403
+        assert request('/api/action', dict(auth, Origin=url),
+                       b'{"project":"0","action":"merge","ticket":"T"}') == 400
+        assert request('/api/action', dict(auth, Origin=url),
+                       b'{"project":"0","action":"shell","ticket":"T"}') == 400
         assert request('/api/test', dict(auth, Origin=url), b'[]') == 400
         assert request('/api/test', dict(auth, Origin=url), b'x' * 1025) == 400
     finally:

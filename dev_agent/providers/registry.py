@@ -12,6 +12,7 @@ from dev_agent.providers.base import AgentProvider
 from dev_agent.providers.claude_cli import ClaudeCLIProvider
 from dev_agent.providers.codex_cli import CodexCLIProvider
 from dev_agent.providers.ollama import OllamaProvider
+from dev_agent.rag import prepare as prepare_rag
 from dev_agent.usage import record_call
 
 
@@ -42,12 +43,14 @@ class ProviderRegistry:
         return self.factories[provider.type](provider)
 
     async def execute(self, stage: str, directory: Path, task: AgentTask) -> AgentResult:
+        task, rag_info = await prepare_rag(task, self.config.rag)
         if stage == "implement" and self.config.knowledge.enabled:
             context_info = {"used": False, "reason": "investigation_already_in_knowledge_bundle"}
         else:
             task, context_info = prepare(task, directory, stage, self.config.context)
         task, project_info = await prepare_project(task, stage, self.config.project_context)
         context_info["project"] = project_info
+        context_info["rag"] = rag_info
         name = self.config.roles[task.role].provider
         config = self.config.providers[name]
         return await record_call(

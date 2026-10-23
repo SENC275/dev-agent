@@ -95,7 +95,29 @@ class ProjectContextConfig(StrictModel):
     max_characters: int = Field(default=3000, ge=1500, le=12000)
 
 
+class RAGConfig(StrictModel):
+    enabled: bool = False
+    top_k: int = Field(default=6, ge=1, le=20)
+    max_characters: int = Field(default=8000, ge=2000, le=32000)
+    max_files: int = Field(default=3000, ge=1, le=20000)
+    max_bytes: int = Field(default=20_000_000, ge=1024, le=100_000_000)
+    embedding_model: str | None = Field(default=None, min_length=1)
+    embedding_url: str = "http://127.0.0.1:11434"
+    embedding_timeout_seconds: float = Field(default=30.0, gt=0, le=300)
+    max_embedding_chunks: int = Field(default=500, ge=1, le=10000)
+
+    @model_validator(mode="after")
+    def validate_embedding(self) -> "RAGConfig":
+        url = urlsplit(self.embedding_url)
+        _ = url.port
+        if (url.scheme not in {"http", "https"} or not url.hostname or url.username
+                or url.password or url.query or url.fragment or url.path not in {"", "/"}):
+            raise ValueError("Embedding URL must be an HTTP(S) origin without credentials.")
+        return self
+
+
 class ProjectConfig(StrictModel):
+    rag: RAGConfig = Field(default_factory=RAGConfig)
     project: str | None = None
     providers: dict[str, ProviderConfig] = Field(
         default_factory=lambda: {"codex": ProviderConfig()}

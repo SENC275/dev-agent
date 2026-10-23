@@ -47,6 +47,50 @@ corpus_app = typer.Typer(
 app.add_typer(corpus_app, name="corpus")
 
 
+rag_app = typer.Typer(no_args_is_help=True, help="Local project retrieval and citations.")
+app.add_typer(rag_app, name="rag")
+
+
+@rag_app.command("index")
+def rag_index() -> None:
+    """Incrementally index current code and documentation without model calls."""
+    from dev_agent.rag import refresh
+
+    try:
+        config = load_config(Path.cwd() / CONFIG_NAME)
+        typer.echo(json.dumps(asyncio.run(refresh(Path.cwd(), config.rag)), indent=2))
+    except (ValueError, OSError, sqlite3.Error, ConfigurationError) as exc:
+        console.print(str(exc), markup=False)
+        raise typer.Exit(1) from None
+
+
+@rag_app.command("search")
+def rag_search(query: str) -> None:
+    """Refresh and retrieve current cited excerpts; optional configured embeddings."""
+    from dev_agent.rag import search
+
+    try:
+        config = load_config(Path.cwd() / CONFIG_NAME)
+        result = asyncio.run(search(Path.cwd(), query, config.rag))
+        typer.echo(json.dumps(result, ensure_ascii=False, indent=2))
+    except (ValueError, OSError, sqlite3.Error, ConfigurationError) as exc:
+        console.print(str(exc), markup=False)
+        raise typer.Exit(1) from None
+
+
+@rag_app.command("clear-vectors")
+def rag_clear_vectors() -> None:
+    """Clear this project's embedding cache (shared across its worktrees)."""
+    from dev_agent.rag import clear_vectors
+
+    try:
+        count = asyncio.run(clear_vectors(Path.cwd()))
+        typer.echo(f"Removed {count} cached vectors; next search rebuilds them.")
+    except (ValueError, OSError, sqlite3.Error) as exc:
+        console.print(str(exc), markup=False)
+        raise typer.Exit(1) from None
+
+
 @corpus_app.command("collect")
 def corpus_collect(ticket_id: str) -> None:
     """Save a reconstructed local candidate; no model call or training."""
@@ -54,8 +98,9 @@ def corpus_collect(ticket_id: str) -> None:
 
     try:
         path = asyncio.run(collect(Journal(Path.cwd()), ticket_id))
-        console.print(f"Candidate saved: {path}\nInspect: dev-agent corpus inspect {ticket_id}",
-                      markup=False)
+        console.print(
+            f"Candidate saved: {path}\nInspect: dev-agent corpus inspect {ticket_id}", markup=False
+        )
     except (ValueError, OSError, sqlite3.Error) as exc:
         console.print(str(exc), markup=False)
         raise typer.Exit(1) from None
@@ -74,12 +119,14 @@ def corpus_inspect(ticket_id: str) -> None:
         raise typer.Exit(1) from None
 
 
-
 @app.command()
 def dashboard(
-    project: Annotated[list[Path] | None, typer.Option(
-        "--project", exists=True, file_okay=False, help="Repeat for multiple repositories."
-    )] = None,
+    project: Annotated[
+        list[Path] | None,
+        typer.Option(
+            "--project", exists=True, file_okay=False, help="Repeat for multiple repositories."
+        ),
+    ] = None,
     port: Annotated[int, typer.Option(min=0, max=65535)] = 8765,
     open_browser: Annotated[bool, typer.Option("--open/--no-open")] = True,
 ) -> None:
@@ -271,13 +318,14 @@ def ticket(
                 console.print(message, markup=False)
 
             with activity(console, "Drafting ticket batch…", lambda: current[0]):
-                report = asyncio.run(generate_batch(
-                    repository, folder, ProviderRegistry(config), progress
-                ))
+                report = asyncio.run(
+                    generate_batch(repository, folder, ProviderRegistry(config), progress)
+                )
             for item in report["items"]:
                 console.print(
                     f"{item['ticket_id']}: {item['status']} "
-                    + item.get("error", item.get("output", "")), markup=False
+                    + item.get("error", item.get("output", "")),
+                    markup=False,
                 )
             console.print(f"Batch report: {report['report_path']}", markup=False)
             console.print("Drafts only. Review scope/dependencies before starting each ticket.")
@@ -543,7 +591,10 @@ def _managed(
             with activity(console, "Updating ticket baseline…", lambda: _stage(journal, ticket_id)):
                 state = asyncio.run(
                     synchronize(
-                        journal, ticket_id, config, ProviderRegistry(config),
+                        journal,
+                        ticket_id,
+                        config,
+                        ProviderRegistry(config),
                         continue_sync=continue_sync,
                     )
                 )
@@ -724,15 +775,19 @@ def status(ticket_id: str) -> None:
             )
         run = journal.get(ticket_id)
         records = usage_report(Path.cwd(), ticket_id)["records"]
-        failures = [r for r in records if r.get("diagnostic")
-                    and r["started_at"] >= (run["created_at"] or "")]
+        failures = [
+            r
+            for r in records
+            if r.get("diagnostic") and r["started_at"] >= (run["created_at"] or "")
+        ]
         if failures:
             latest = max(failures, key=lambda r: r["started_at"])
             diagnostic = latest["diagnostic"]
             console.print(
                 f"Last recorded provider failure ({latest['started_at']}, "
                 f"{latest['stage']}/{latest['role']}): [{diagnostic['kind']}] "
-                f"{diagnostic['error']}", markup=False,
+                f"{diagnostic['error']}",
+                markup=False,
             )
             if diagnostic.get("stderr"):
                 console.print(diagnostic["stderr"], markup=False)
@@ -740,7 +795,8 @@ def status(ticket_id: str) -> None:
             console.print(diagnostic["hint"], markup=False)
             console.print(
                 f"If the ticket is still stopped, after addressing the cause:\n"
-                f"dev-agent resume {ticket_id}", markup=False,
+                f"dev-agent resume {ticket_id}",
+                markup=False,
             )
         console.print("State is the last recorded result; resume checks before continuing.")
     except (ValueError, OSError, sqlite3.Error) as exc:
